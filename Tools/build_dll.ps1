@@ -1,6 +1,6 @@
-﻿<#
+<#
 .SYNOPSIS
-    Compile GroundBlastFx.dll et la copie dans GameData/GroundBlastFx/Plugins/.
+    Compile GroundBlastFx.dll et la copie dans GameData/Volumetric Ground FX/Plugins/.
 .DESCRIPTION
     Le build doit rester vert.
     Exemples :
@@ -34,7 +34,7 @@ Write-Host "[build] $Configuration contre $KspRoot"
 & dotnet build $proj -c $Configuration -nologo -v minimal "-p:KSPRoot=$KspRoot"
 if ($LASTEXITCODE -ne 0) { throw "Échec de la compilation (code $LASTEXITCODE)" }
 
-$plugins = Join-Path $repo 'GameData\GroundBlastFx\Plugins'
+$plugins = Join-Path $repo 'GameData\Volumetric Ground FX\Plugins'
 New-Item -ItemType Directory -Force -Path $plugins | Out-Null
 Copy-Item -LiteralPath (Join-Path $outDir 'GroundBlastFx.dll') -Destination $plugins -Force
 $pdbTarget = Join-Path $plugins 'GroundBlastFx.pdb'
@@ -44,7 +44,7 @@ if ($Configuration -eq 'Debug') {
     Remove-Item -LiteralPath $pdbTarget -Force   # fichier produit par un build Debug précédent, non versionné
 }
 $hash = (Get-FileHash -LiteralPath (Join-Path $plugins 'GroundBlastFx.dll') -Algorithm SHA256).Hash
-Write-Host "[build] OK -> GameData\GroundBlastFx\Plugins\GroundBlastFx.dll"
+Write-Host "[build] OK -> GameData\Volumetric Ground FX\Plugins\GroundBlastFx.dll"
 Write-Host "[build] SHA256 $hash"
 
 if ($RunTests) {

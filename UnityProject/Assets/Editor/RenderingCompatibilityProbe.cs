@@ -70,7 +70,7 @@ public static class RenderingCompatibilityProbe
         try
         {
             string root = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
-            bundle = AssetBundle.LoadFromFile(Path.Combine(root, "GameData/GroundBlastFx/Shaders/GroundBlastFx.unity3d"));
+            bundle = AssetBundle.LoadFromFile(Path.Combine(root, "GameData/Volumetric Ground FX/Shaders/GroundBlastFx.unity3d"));
             RenderCore.ForceAnalytic = true;
             core = new RenderCore(bundle);
             if (!core.IsAvailable) throw new Exception(core.Status);

@@ -3,12 +3,12 @@ using System.IO;
 
 namespace GroundBlastFx.Core
 {
-    /// <summary>Chemins du mod, déduits de l'emplacement de la DLL (GameData/GroundBlastFx/Plugins/GroundBlastFx.dll).</summary>
+    /// <summary>Chemins du mod, déduits de l'emplacement de la DLL (GameData/Volumetric Ground FX/Plugins/GroundBlastFx.dll).</summary>
     public static class GePaths
     {
         private static string _modRoot;
 
-        /// <summary>GameData/GroundBlastFx (chemin absolu).</summary>
+        /// <summary>GameData/Volumetric Ground FX (chemin absolu).</summary>
         public static string ModRoot
         {
             get
@@ -25,7 +25,7 @@ namespace GroundBlastFx.Core
                     _modRoot = null;
                 }
                 if (string.IsNullOrEmpty(_modRoot) || !Directory.Exists(_modRoot))
-                    _modRoot = Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "GroundBlastFx");
+                    _modRoot = Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "Volumetric Ground FX");
                 return _modRoot;
             }
         }

@@ -1,10 +1,10 @@
-﻿<#
+<#
 .SYNOPSIS
-    Copie GameData/GroundBlastFx du dépôt dans l'installation KSP, sans rien toucher d'autre.
+    Copie GameData/Volumetric Ground FX du dépôt dans l'installation KSP, sans rien toucher d'autre.
 .DESCRIPTION
     
     - Refuse de tourner si KSP (cette installation) est ouvert.
-    - Ne touche qu'à <KSP>/GameData/GroundBlastFx. Les réglages du joueur (PluginData/Settings.cfg,
+    - Ne touche qu'à <KSP>/GameData/Volumetric Ground FX. Les réglages du joueur (PluginData/Settings.cfg,
       PluginData/LaunchSites_user.cfg) et le log ne sont jamais écrasés.
     - Les fichiers présents dans l'installation mais absents du dépôt (anciennes versions) sont déplacés
       dans <KSP>/_mods_desactives/GroundBlastFx_anciens/<horodatage>/ (jamais supprimés).
@@ -36,11 +36,11 @@ if ($Build) {
     & (Join-Path $PSScriptRoot 'build_dll.ps1') -Configuration $Build -KspRoot $KspRoot
 }
 
-$src = Join-Path $repo 'GameData\GroundBlastFx'
+$src = Join-Path $repo 'GameData\Volumetric Ground FX'
 $dll = Join-Path $src 'Plugins\GroundBlastFx.dll'
 if (-not (Test-Path -LiteralPath $dll)) { throw 'GroundBlastFx.dll absente : lancez Tools/build_dll.ps1 (ou -Build Release).' }
 
-$dst = Join-Path $KspRoot 'GameData\GroundBlastFx'
+$dst = Join-Path $KspRoot 'GameData\Volumetric Ground FX'
 if ((Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
     throw "Refus : $dst est un lien/jonction."
 }

@@ -12,7 +12,7 @@ namespace GroundBlastFx.Core
 {
     /// <summary>
     /// Automatisation de test RÉSERVÉE AU DÉVELOPPEMENT. Inactive sauf si le fichier
-    /// GameData/GroundBlastFx/PluginData/DevAutomation.cfg existe avec enabled = true — il n'est jamais livré.
+    /// GameData/Volumetric Ground FX/PluginData/DevAutomation.cfg existe avec enabled = true — il n'est jamais livré.
     /// Au menu principal : charge une sauvegarde et passe en vol sur un vaisseau ; en vol : exécute des étapes
     /// horodatées (démos, captures d'écran, caméra, moteurs, mesures de performance), puis peut quitter le jeu.
     /// Ne sauvegarde jamais la partie.

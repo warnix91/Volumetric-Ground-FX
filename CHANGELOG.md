@@ -4,7 +4,7 @@
 
 Highlights since 1.0.1 (including the 1.0.2 development builds):
 
-- New public name: **Volumetric Ground FX (VGFX)**, formerly GroundBlastFx. The installation folder and save/settings identifiers remain compatible.
+- New public name: **Volumetric Ground FX (VGFX)**, formerly GroundBlastFx. The installation folder is now `Volumetric Ground FX`; saved marks and settings remain compatible.
 - Larger, detailed launch-pad steam: puffs move out of the trench, slow down, grow and form billowing clouds.
 - The near-outlet jet blends locally into the cloud, without shrinking the outer steam cloud. Existing steam keeps moving and dissipates after cutoff instead of disappearing immediately at the outlet.
 - Smaller, lower flame origin at the trench mouth, better aligned with the physical opening.

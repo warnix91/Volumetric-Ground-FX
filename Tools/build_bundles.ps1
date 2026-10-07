@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param([string]$Unity = 'C:\Program Files\Unity\Hub\Editor\2019.4.18f1\Editor\Unity.exe')
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'sync_unity_shared.ps1')
@@ -16,7 +16,7 @@ if ($process.ExitCode -ne 0) {
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 80 }
     throw "Build Unity en échec ($($process.ExitCode))"
 }
-$bundle = Join-Path $repo 'GameData\GroundBlastFx\Shaders\GroundBlastFx.unity3d'
+$bundle = Join-Path $repo 'GameData\Volumetric Ground FX\Shaders\GroundBlastFx.unity3d'
 if (-not (Test-Path -LiteralPath $bundle)) { Get-Content -LiteralPath $log -Tail 80; throw 'Bundle manquant' }
 if (-not (Select-String -LiteralPath $log -SimpleMatch '[GroundBlastFx] Bundle compilé :' -Quiet) -or
     (Get-Item -LiteralPath $bundle).LastWriteTime -lt $buildStarted.AddSeconds(-2)) {

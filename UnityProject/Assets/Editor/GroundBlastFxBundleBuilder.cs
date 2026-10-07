@@ -31,7 +31,7 @@ public static class GroundBlastFxBundleBuilder
         if (manifests == null) throw new Exception("BuildPipeline a échoué");
         string source = Path.Combine(outDir, "groundblastfx");
         if (!File.Exists(source)) throw new Exception("Bundle absent après compilation");
-        string target = Path.GetFullPath(Path.Combine(project, "..", "GameData", "GroundBlastFx", "Shaders", "GroundBlastFx.unity3d"));
+        string target = Path.GetFullPath(Path.Combine(project, "..", "GameData", "Volumetric Ground FX", "Shaders", "GroundBlastFx.unity3d"));
         Directory.CreateDirectory(Path.GetDirectoryName(target));
         File.Copy(source, target, true);
         File.WriteAllText(Path.Combine(outDir, "build-info.txt"),

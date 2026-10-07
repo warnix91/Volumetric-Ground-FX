@@ -1,6 +1,6 @@
-﻿<#
+<#
 .SYNOPSIS
-    Construit la livraison : build Release + tests, puis Release/VGFX-<version>.zip (contient uniquement GameData/GroundBlastFx).
+    Construit la livraison : build Release + tests, puis Release/VGFX-<version>.zip (contient uniquement GameData/Volumetric Ground FX).
 .DESCRIPTION
     Depuis un clone propre : aucune autre étape nécessaire (les bundles de shaders sont versionnés).
     Exclus du zip : réglages et fichiers du joueur (Settings.cfg, LaunchSites_user.cfg, GroundBlastFx.log),
@@ -22,14 +22,14 @@ if (-not $SkipTests) { $buildArgs.RunTests = $true }
 & (Join-Path $PSScriptRoot 'build_dll.ps1') @buildArgs
 
 # 2. Version depuis GroundBlastFx.version
-$src = Join-Path $repo 'GameData\GroundBlastFx'
+$src = Join-Path $repo 'GameData\Volumetric Ground FX'
 $ver = Get-Content -Raw -LiteralPath (Join-Path $src 'GroundBlastFx.version') | ConvertFrom-Json
 $version = "$($ver.VERSION.MAJOR).$($ver.VERSION.MINOR).$($ver.VERSION.PATCH)"
 
 # 3. Contrôles
 $bundles = @(Get-ChildItem -LiteralPath (Join-Path $src 'Shaders') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne '.gitkeep' })
 if ($bundles.Count -eq 0) {
-    Write-Warning 'Aucun bundle de shaders dans GameData/GroundBlastFx/Shaders : le mod fonctionnera avec le NullRenderer (aucun effet visuel).'
+    Write-Warning 'Aucun bundle de shaders dans GameData/Volumetric Ground FX/Shaders : le mod fonctionnera avec le NullRenderer (aucun effet visuel).'
 }
 
 # 4. Zip
@@ -51,7 +51,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
 try {
     foreach ($f in $files) {
-        $entry = 'GameData/GroundBlastFx/' + $f.FullName.Substring($src.Length + 1).Replace('\', '/')
+        $entry = 'GameData/Volumetric Ground FX/' + $f.FullName.Substring($src.Length + 1).Replace('\', '/')
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $f.FullName, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
 } finally {

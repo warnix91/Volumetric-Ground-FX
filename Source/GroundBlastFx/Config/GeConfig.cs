@@ -59,7 +59,7 @@ namespace GroundBlastFx.Config
     }
 
     /// <summary>
-    /// Configuration chargée depuis GameData/GroundBlastFx/Configs/*.cfg via GameDatabase (les patchs ModuleManager
+    /// Configuration chargée depuis GameData/Volumetric Ground FX/Configs/*.cfg via GameDatabase (les patchs ModuleManager
     /// d'autres mods restent donc possibles), plus les réglages de tranchée écrits en jeu (PluginData).
     /// </summary>
     public static class GeConfig

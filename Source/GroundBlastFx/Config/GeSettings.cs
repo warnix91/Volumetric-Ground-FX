@@ -8,7 +8,7 @@ using QualityLevel = GroundBlastFx.Contracts.QualityLevel; // UnityEngine.Qualit
 namespace GroundBlastFx.Config
 {
     /// <summary>
-    /// Réglages du joueur : GameData/GroundBlastFx/PluginData/Settings.cfg (écrit en jeu).
+    /// Réglages du joueur : GameData/Volumetric Ground FX/PluginData/Settings.cfg (écrit en jeu).
     /// Au premier lancement, les valeurs viennent de PluginData/DefaultSettings.cfg. Le détail du rendu est choisi
     /// identique sur les machines capables de lancer le rendu volumétrique.
     /// </summary>

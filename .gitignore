@@ -4,13 +4,13 @@ obj/
 *.user
 *.suo
 Release/
-GameData/GroundBlastFx/Plugins/*.dll
-GameData/GroundBlastFx/Plugins/*.pdb
-GameData/GroundBlastFx/PluginData/Settings.cfg
-GameData/GroundBlastFx/PluginData/LaunchSites_user.cfg
-GameData/GroundBlastFx/PluginData/GroundBlastFx.log
-GameData/GroundBlastFx/PluginData/DevAutomation.cfg
-GameData/GroundBlastFx/PluginData/Captures/
+GameData/Volumetric Ground FX/Plugins/*.dll
+GameData/Volumetric Ground FX/Plugins/*.pdb
+GameData/Volumetric Ground FX/PluginData/Settings.cfg
+GameData/Volumetric Ground FX/PluginData/LaunchSites_user.cfg
+GameData/Volumetric Ground FX/PluginData/GroundBlastFx.log
+GameData/Volumetric Ground FX/PluginData/DevAutomation.cfg
+GameData/Volumetric Ground FX/PluginData/Captures/
 UnityProject/Library/
 UnityProject/Temp/
 UnityProject/Logs/

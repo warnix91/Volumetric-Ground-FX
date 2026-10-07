@@ -12,9 +12,9 @@ Formerly **GroundBlastFx**. Version 1.1.0 adds more detailed pad steam, a smooth
 
 ## Installation and updates
 
-Copy `GameData/GroundBlastFx` from `VGFX-1.1.0.zip` into your KSP folder. For an update, replace the existing files in that same folder. Keep `PluginData/Settings.cfg` and `PluginData/LaunchSites_user.cfg` if they exist. Saved surface marks remain in your game save.
+Copy `GameData/Volumetric Ground FX` from `VGFX-1.1.0.zip` into your KSP folder. For an update from GroundBlastFx, close KSP and rename the existing `GameData/GroundBlastFx` folder to `GameData/Volumetric Ground FX` before copying the new files. Keep `PluginData/Settings.cfg` and `PluginData/LaunchSites_user.cfg` if they exist. Saved surface marks remain in your game save.
 
-Install one copy. The folder is still named `GroundBlastFx`; do not add a second folder named `VGFX`.
+Install one copy in `GameData/Volumetric Ground FX`. Do not leave another copy in `GameData/GroundBlastFx`.
 
 ## Settings
 
@@ -46,7 +46,7 @@ Large clouds can be demanding. Performance depends on your GPU, screen resolutio
 
 ## Bug reports
 
-Include your KSP version, the other visual mods involved, a screenshot and `KSP.log` plus `GameData/GroundBlastFx/PluginData/GroundBlastFx.log`. Check logs for personal paths or other private information before sharing them.
+Include your KSP version, the other visual mods involved, a screenshot and `KSP.log` plus `GameData/Volumetric Ground FX/PluginData/GroundBlastFx.log`. Check logs for personal paths or other private information before sharing them.
 
 ## Licence
 
@@ -54,6 +54,6 @@ MIT, by Warnix. See `LICENSE` and `CREDITS.md`.
 
 ---
 
-**Français :** effets au sol volumétriques pour KSP 1.12.x, Windows/DX11. Copier `GameData/GroundBlastFx` dans le dossier KSP. Pour une mise à jour, conserver les réglages de `PluginData` et installer une seule copie. Le bouton VGFX ouvre les réglages de densité, portée, luminosité et souffle ; la langue suit celle du jeu.
+**Français :** effets au sol volumétriques pour KSP 1.12.x, Windows/DX11. Copier `GameData/Volumetric Ground FX` dans le dossier KSP. Pour une mise à jour, conserver les réglages de `PluginData` et installer une seule copie. Le bouton VGFX ouvre les réglages de densité, portée, luminosité et souffle ; la langue suit celle du jeu.
 
 Ground marks are enabled by default. In the VGFX window, disable **Ground marks** to hide existing marks and stop creating new ones. **Keep marks in save** controls persistence between sessions. **Clear all ground marks** removes the current game's marks; the removal is recorded on the next normal save. Older quicksaves and backups can restore their own marks. Running engines can create fresh marks after clearing.

@@ -14,7 +14,7 @@ using QualityLevel = GroundBlastFx.Contracts.QualityLevel;
 // Harnais de rendu hors jeu. Il utilise EXACTEMENT le même code que le jeu :
 // - RenderCore (Source/GroundBlastFx/Rendering/RenderCore.cs, copié dans Assets/Editor/Shared par les scripts Tools/) ;
 // - le modèle physique du Core (Source/GroundBlastFx/Physics/*.cs) et les profils de démo S1…S7 ;
-// - le bundle compilé GameData/GroundBlastFx/Shaders/GroundBlastFx.unity3d.
+// - le bundle compilé GameData/Volumetric Ground FX/Shaders/GroundBlastFx.unity3d.
 // Chaque scénario est simulé à 30 Hz (front du nuage, fondus, coupure, dissipation) et capturé aux instants clés.
 public static class RenderHarness
 {
