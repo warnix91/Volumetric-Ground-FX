@@ -1,11 +1,10 @@
-# GroundBlastFx - credits and code origin
+# Volumetric Ground FX (VGFX) - credits and code origin
 
-All of GroundBlastFx (C# plugin, HLSL shaders, compute shader, tools) was written for this mod, with the help of AI
-coding assistants.
+VGFX is developed by Warnix. The rendering techniques referenced below inform the volumetric effects.
 
 ## Published techniques used
 
-These methods come from public papers and talks; they were re-implemented here from their descriptions.
+References for the algorithms used in the shaders and simulation:
 
 - Real-time volumetric clouds, Perlin-Worley noise, "powder" effect: A. Schneider and N. Vos, *The Real-time Volumetric
   Cloudscapes of Horizon Zero Dawn*, SIGGRAPH 2015.

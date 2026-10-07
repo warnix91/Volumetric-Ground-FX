@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Construit la livraison : build Release + tests, puis Release/GroundBlastFx-v<version>.zip (contient uniquement GameData/GroundBlastFx).
+    Construit la livraison : build Release + tests, puis Release/VGFX-<version>.zip (contient uniquement GameData/GroundBlastFx).
 .DESCRIPTION
     Depuis un clone propre : aucune autre étape nécessaire (les bundles de shaders sont versionnés).
     Exclus du zip : réglages et fichiers du joueur (Settings.cfg, LaunchSites_user.cfg, GroundBlastFx.log),
@@ -40,9 +40,9 @@ $files = @(Get-ChildItem -LiteralPath $src -Recurse -File | Where-Object {
 })
 $outDir = Join-Path $repo 'Release'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-$zip = Join-Path $outDir "GroundBlastFx-v$version.zip"
+$zip = Join-Path $outDir "VGFX-$version.zip"
 if (Test-Path -LiteralPath $zip) {
-    $old = Join-Path $outDir ("GroundBlastFx-v$version.previous-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.zip')
+    $old = Join-Path $outDir ("VGFX-$version.previous-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.zip')
     Move-Item -LiteralPath $zip -Destination $old
     Write-Host "[package] Ancienne archive conservée : $old"
 }

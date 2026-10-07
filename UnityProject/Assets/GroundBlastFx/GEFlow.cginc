@@ -16,6 +16,7 @@ float4 _GESrcP[4];     // rayon de l'anneau source, largeur, hauteur (m, ≥ 1 m
 float4 _GEOutlets[8];  // bouches du déflecteur de flammes (deux par foyer, repère local) : x, z, hauteur de la bouche, poids (0 = absente)
 float4 _GEOutletGround[4]; // sol devant les bouches 0 et 1 : dénivelé jusqu'au terrain (m), distance où il est à moitié franchi (m)
 float4 _GEJetX[4];     // jets visibles des bouches : longueur L (m), intensité 0..1, rayon à la bouche r0 (m), décrochage (m)
+float4 _GEJetMotion[4]; // vitesse mémorisée (m/s), raccord aux bouffées de pad (0/1), réservés
 float4 _GEOutletDir[4]; // sens de sortie des bouches 0 et 1 (x, z ; 0 = depuis l'ancrage)
 
 #define GE_JET_OPENING 0.2   // la vapeur s'élargit dès la bouche avant de rejoindre le nuage de surface
@@ -81,11 +82,19 @@ float GEJetShape(int k, int i, float3 p, out float s, out float rr, out float la
     lat = rel.x * d.y - rel.y * d.x;
     float sp = max(s, 0.0);
     rr = jx.z + GE_JET_OPENING * sp;
+    // Bouche surélevée : la flamme part dans l'ouverture sous la lèvre, pas en boule au-dessus.
+    // Correction de rendu seulement ; le nuage et la forme en aval restent ceux du tir validé.
+    float mouth = saturate(_GEJetMotion[k].y) * saturate(g.x)
+                * (1.0 - smoothstep(2.0, max(2.0 * g.y + 4.0, 8.0), sp));
+    rr *= 1.0 - 0.3 * mouth;
     float x01 = saturate((s - g.y + 6.0) / 12.0);
     float groundY = o.z - g.x * x01 * x01 * (3.0 - 2.0 * x01);
     // Axe : à la hauteur de la bouche à la sortie, puis collé au sol (le jet rampe et s'épaissit vers le haut).
     float yc = lerp(o.z + 0.3 * rr, groundY + 0.55 * rr, saturate(sp / (g.y + 10.0)));
-    dy = (p.y - yc) * (p.y > yc ? 1.0 : 1.2);
+    float halfHeight = lerp(rr, min(rr, max(0.45 * g.x, 1.0)), mouth);
+    yc = lerp(yc, o.z - 0.5 * g.x, mouth);
+    groundY = lerp(groundY, o.z - g.x, mouth);
+    dy = (p.y - yc) * (p.y > yc ? 1.0 : 1.2) * (rr / halfHeight);
     float rho2 = (lat * lat + dy * dy) / (rr * rr);
     float shape = exp(-1.4 * rho2);
     // Naît dans la bouche ; après la coupure, le jet se décroche de la bouche (jx.w avance) et part avec le nuage.

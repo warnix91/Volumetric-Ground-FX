@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using GroundBlastFx.Contracts;
+using GroundBlastFx.Model;
 using UnityEngine;
 using UnityEngine.Rendering;
 using QualityLevel = GroundBlastFx.Contracts.QualityLevel;
@@ -91,9 +92,13 @@ namespace GroundBlastFx.Rendering
         public static Action<string> Log = s => Debug.Log("[GroundBlastFx] " + s);
         /// <summary>Diagnostic du harnais : désactive la grille simulée (volume vide).</summary>
         public static bool ForceAnalytic;
+        /// <summary>1.0.2 : écrit la profondeur du nuage opaque (passe 3). Faux = comportement 1.0.1 (diagnostic du banc).</summary>
+        public static bool WriteCloudDepth = true;
 
         private static readonly int LowId = Shader.PropertyToID("_GELowTarget");
         private static readonly int CopyId = Shader.PropertyToID("_GECopyTarget");
+        private static readonly int CloudDepthId = Shader.PropertyToID("_GECloudDepth");
+        private static readonly int CameraDepthTexId = Shader.PropertyToID("_CameraDepthTexture");
         private static readonly int LowTexId = Shader.PropertyToID("_GELowTex");
         private static readonly int CountId = Shader.PropertyToID("_GECount");
         private static readonly int SurfaceGroupId = Shader.PropertyToID("_GESurfaceGroup");
@@ -123,11 +128,18 @@ namespace GroundBlastFx.Rendering
         private readonly Vector4[] _outletGround = new Vector4[MaxClusters];
         private readonly Vector4[] _flowX = new Vector4[MaxClusters];
         private readonly Vector4[] _jetX = new Vector4[MaxClusters];
+        // Vitesse mémorisée de la vapeur déjà sortie ; y = raccord aux bouffées de pad.
+        // Distincte de _flowX : couper les moteurs doit arrêter l'émission, pas figer la vapeur en transit.
+        private readonly Vector4[] _jetMotion = new Vector4[MaxClusters];
         private readonly float[] _slotJetL = new float[MaxClusters];
         private readonly float[] _slotJetS = new float[MaxClusters];
         private readonly float[] _slotJetD = new float[MaxClusters];
         private readonly Vector4[] _outletDir = new Vector4[MaxClusters];
-        private float _dt;
+        private float _dt, _sampleDt;
+        private float _effectBrightness = VisualTuning.DefaultBrightness;
+        private readonly ThrustPulse[] _thrustPulse = new ThrustPulse[MaxClusters];
+        private readonly PadFlowLog[] _padFlowLog = new PadFlowLog[MaxClusters];
+        private int _padFlowLogBudget = 24; // transitions, jamais une ligne par frame
         private readonly float[] _slotFloor = new float[MaxClusters];
         private readonly float[] _slotOutD = new float[MaxClusters];
         // Dérive de la grille au vent (1.8, m, repère local est/nord) : quand l'apport est coupé, la grille suit le nuage
@@ -182,11 +194,20 @@ namespace GroundBlastFx.Rendering
         private Texture3D _noise;
         private ComputeShader _compute;
         private ComputeBuffer _debrisBuffer, _debrisArgs;
+        // 1.0.2 : vapeur du pas en bouffées (méthode lagrangienne) : avancées ici, fondues chaque image dans la grille de
+        // l'emplacement par le compute shader (union de sphères douces) au lieu du transport de la grille.
+        private readonly PadPuffs[] _puffs = new PadPuffs[MaxClusters];
+        private readonly bool[] _puffMode = new bool[MaxClusters];
+        private readonly Vector4[] _puffData = new Vector4[MaxClusters * PadPuffs.Capacity * 2];
+        private ComputeBuffer _puffBuffer;
+        private int _puffSlot;
+        private Func<float, float, float> _puffGround;
         private int _debrisKernel, _debrisPerSlot;
         private RenderTexture _simRead, _simWrite;
         private int _simKernel, _simX, _simY, _simZ;
         private bool _simActive, _simFailed;
         private int _clusterCount, _markCount;
+        private int _lowHeight; // hauteur réellement enregistrée pour le cône de chaque pixel
         private QualityLevel _quality;
         private float _time, _night, _fovTan = 0.6f, _simDt;
         private bool _lightLogged;
@@ -260,6 +281,8 @@ namespace GroundBlastFx.Rendering
             if (!IsAvailable || cam == null) return 0;
             _time = env.Time;
             _dt = Mathf.Clamp(env.DeltaTime, 0f, 0.1f);
+            _sampleDt = env.DeltaTime;
+            _effectBrightness = VisualTuning.Brightness(settings.EffectBrightness);
             _frame++;
             // Obscurité 0 (plein jour) … 1 (nuit) : sans exposition automatique dans KSP, la lueur des flammes n'est
             // visible que la nuit ; en plein jour le soleil l'efface complètement.
@@ -415,6 +438,76 @@ namespace GroundBlastFx.Rendering
                 && (c.DeflectorOutletCount > 0 || c.TrenchDirectionWorld.sqrMagnitude > 0.25f);
         }
 
+        /// <summary>
+        /// 1.0.2 : bouffées de vapeur d'un foyer « pas de tir » à déflecteur. Repère des bouffées = repère de la grille sans
+        /// sa dérive au vent (elles sont fixées au sol et dérivent d'elles-mêmes) ; converties en repère de la grille pour
+        /// le GPU. Les autres foyers gardent la simulation sur grille.
+        /// </summary>
+        private void UpdatePuffs(int s, ref ImpingementCluster c, bool vacuum, float jetFeed, float channel, float exitSpeed,
+                                 int outletCount, float rmax, float ri, float u, float steam, Vector2 windL, float source, float global, float fadeTau, float impulse)
+        {
+            int b = s * PadPuffs.Capacity * 2;
+            bool pad = c.Surface == SurfaceKind.LaunchPad && !vacuum && HasDeflector(ref c);
+            if (_slotFresh[s] && _puffs[s] != null) _puffs[s].Clear();
+            if (!pad)
+            {
+                if (_puffMode[s]) { for (int i = 0; i < PadPuffs.Capacity * 2; i++) _puffData[b + i] = Vector4.zero; }
+                _puffMode[s] = false;
+                return;
+            }
+            if (_puffs[s] == null) _puffs[s] = new PadPuffs(c.Id * 7919 + 13);
+            if (_puffGround == null) _puffGround = PuffGround;
+            _puffMode[s] = true;
+            Vector4 o0 = _outlets[2 * s], o1 = _outlets[2 * s + 1], od = _outletDir[s];
+            Vector2 d0 = new Vector2(od.x, od.y), d1 = new Vector2(od.z, od.w);
+            if (d0.sqrMagnitude > 1e-4f) d0.Normalize(); else d0 = new Vector2(o0.x, o0.y).normalized;
+            if (d1.sqrMagnitude > 1e-4f) d1.Normalize(); else d1 = new Vector2(o1.x, o1.y).normalized;
+            Vector2 drift = _slotDrift[s];
+            var inp = new PadPuffs.Inputs
+            {
+                OutletCount = outletCount,
+                O0X = o0.x + drift.x, O0Y = o0.z, O0Z = o0.y + drift.y, D0X = d0.x, D0Z = d0.y,
+                O1X = o1.x + drift.x, O1Y = o1.z, O1Z = o1.y + drift.y, D1X = d1.x, D1Z = d1.y,
+                OutletFeed = jetFeed, ExitSpeed = exitSpeed, OutletHalfWidth = Mathf.Max(_flowX[s].z, 1f),
+                JetLength = JetLength(rmax),
+                CenterFeed = c.EnginesActive ? (1f - channel) * Mathf.Clamp01(source * 1.3f) * Mathf.Clamp01((u - 8f) / 60f) : 0f,
+                CenterX = _src[s].x + drift.x, CenterY = _src[s].y, CenterZ = _src[s].z + drift.y,
+                CenterSpeed = Mathf.Min(u, 60f), CenterRadius = ri,
+                WindX = windL.x, WindZ = windL.y, CloudRadius = rmax, Steam = steam,
+                Life = Mathf.Clamp(c.DissipationTimeS > 1f ? c.DissipationTimeS : 20f + 70f * Mathf.Clamp01(rmax / 400f), 25f, 240f),
+                Density = Mathf.Clamp01(0.9f * Mathf.Min(global, 1.5f)),
+                FadeTau = fadeTau,   // même rythme que les jets des bouches (1.0.1)
+            };
+            _puffSlot = s;
+            PadIgnitionImpulse.Apply(_puffs[s].Items, ref inp, impulse, _sampleDt);
+            _puffs[s].Step(_dt, ref inp, _puffGround);
+            PadPuffs.Puff[] items = _puffs[s].Items;
+            for (int i = 0; i < PadPuffs.Capacity; i++)
+            {
+                float a = _puffs[s].Opacity(items[i]);
+                if (a <= 0.002f) { _puffData[b + 2 * i] = Vector4.zero; _puffData[b + 2 * i + 1] = Vector4.zero; continue; }
+                _puffData[b + 2 * i] = new Vector4(items[i].X - drift.x, items[i].Y, items[i].Z - drift.y, items[i].Radius);
+                _puffData[b + 2 * i + 1] = new Vector4(a, items[i].Tall, 0f, 0f);
+            }
+        }
+
+        /// <summary>Hauteur du sol (repère de la grille, plancher compris) sous un point des bouffées de l'emplacement courant.</summary>
+        private float PuffGround(float x, float z)
+        {
+            int s = _puffSlot;
+            float floor = _slotFloor[s];
+            if (_groundInfo[s].x < 0.5f) return floor;
+            float E = Mathf.Max(_slotE[s], 1f);
+            float gx = ((x - _groundDrift[s].x) / (2f * E) + 0.5f) * GroundRes - 0.5f;
+            float gz = ((z - _groundDrift[s].y) / (2f * E) + 0.5f) * GroundRes - 0.5f;
+            gx = Mathf.Clamp(gx, 0f, GroundRes - 1.001f); gz = Mathf.Clamp(gz, 0f, GroundRes - 1.001f);
+            int ix = (int)gx, iz = (int)gz, b = s * GroundRes * GroundRes;
+            float fx = gx - ix, fz = gz - iz;
+            float h00 = _groundRel[b + iz * GroundRes + ix], h10 = _groundRel[b + iz * GroundRes + ix + 1];
+            float h01 = _groundRel[b + (iz + 1) * GroundRes + ix], h11 = _groundRel[b + (iz + 1) * GroundRes + ix + 1];
+            return floor + Mathf.Lerp(Mathf.Lerp(h00, h10, fx), Mathf.Lerp(h01, h11, fx), fz);
+        }
+
         /// <summary>Profondeur (m) dont on abaisse la grille quand une bouche du déflecteur est plus basse que la table du pas.</summary>
         private static float GridFloor(ref ImpingementCluster c)
         {
@@ -480,6 +573,22 @@ namespace GroundBlastFx.Rendering
             return d;
         }
 
+        private void ReportPadFlow(int s, ref ImpingementCluster c, bool feeding, float pulse,
+                                   float jetFeed, float channel, float exitSpeed, int outlets)
+        {
+            PadFlowEvent events = _padFlowLog[s].Step(feeding, pulse > 0f, _slotFresh[s]);
+            if (events == PadFlowEvent.None || _padFlowLogBudget <= 0) return;
+            _padFlowLogBudget--;
+            Log(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "Vapeur du pad : foyer {0}, événements={1}, t={2:F3}s, poussée={3:F3}MN, " +
+                "hausse={4:F3}MN, amplitude={5:F3}, souffle={6:F3}, alimentation={7:F3}, " +
+                "canal={8:F3}, sorties={9}, vitesse={10:F1}m/s, moteurs={11}, dt={12:F4}s, âge={13:F3}s{14}",
+                c.Id, events, _time, c.TotalThrustN / 1000000f, _thrustPulse[s].RiseThrustN / 1000000f,
+                _thrustPulse[s].Strength01, pulse, jetFeed, channel, outlets, exitSpeed,
+                c.EnginesActive, _sampleDt, c.TimeSinceIgnitionS,
+                _padFlowLogBudget == 0 ? " (limite de 24 transitions atteinte pour cette scène)" : ""));
+        }
+
         private void ClearSlot(int s)
         {
             Lights[s].Enabled = false;
@@ -489,7 +598,10 @@ namespace GroundBlastFx.Rendering
             _gridN[s].w = 0f;
             _jet[s] = Vector4.zero;
             _flowX[s] = Vector4.zero;
+            _thrustPulse[s] = default;
+            _padFlowLog[s] = default;
             _jetX[s] = Vector4.zero;
+            _jetMotion[s] = Vector4.zero;
             _slotJetL[s] = 0f; _slotJetS[s] = 0f; _slotJetD[s] = 0f;
             _outletDir[s] = Vector4.zero;
             _outlets[2 * s] = Vector4.zero;
@@ -622,6 +734,15 @@ namespace GroundBlastFx.Rendering
             // Le modèle pariétal seul donne déjà plusieurs centaines de m/s, même pour un petit moteur.
             // Son ancien plafond identique pour tous effaçait la différence de poussée dans les jets du pad.
             float exitSpeed = Mathf.Min(12f + 34f * Mathf.Sqrt(thrustMN), Mathf.Min(0.25f * u, 140f));
+            // Allumage SRB / hausse brusque : accélérer brièvement la vapeur des bouches existantes.
+            // Aucun changement de rayon, hauteur, ancrage, densité, durée de vie ou apport nominal des bouffées.
+            bool pulseEligible = enabled && c.EnginesActive && c.Surface == SurfaceKind.LaunchPad && !vacuum && HasDeflector(ref c) && channel > 0.2f && u > 8f;
+            bool coldIgnition = c.TimeSinceIgnitionS < 0.15f && source < 0.15f;
+            float pulse = _thrustPulse[s].Step(_time, _sampleDt, c.TotalThrustN, pulseEligible, _slotFresh[s], coldIgnition);
+            float strength = VisualTuning.IgnitionStrength(settings.IgnitionStrength);
+            pulse *= strength;
+            float impulse = 1.8f * exitSpeed * _thrustPulse[s].Rise * strength;
+            exitSpeed = Mathf.Min(exitSpeed * (1f + 1.8f * pulse), 140f);
             _flowX[s] = new Vector4(channel, exitSpeed, bo, c.EnginesActive ? R : 0f);
             // Jets visibles des bouches (pas de tir de KSP 2, mods de panaches volumétriques, vidéos de lancements) :
             // cônes denses qui jaillissent des bouches en ~1,5 s, s'ouvrent à ~17° et se dissolvent en nuage au bout.
@@ -629,7 +750,7 @@ namespace GroundBlastFx.Rendering
             // Longueur et largeur selon la poussée (R_max = 3 √F kN) : un petit lanceur fait des jets courts et fins,
             // une Saturn V des jets de plus de 200 m. Après le départ, le jet se décroche de la bouche et part avec le
             // nuage (plus de disparition en une seconde) ; s'il reprend, il se raccroche.
-            if (_slotFresh[s]) { _slotJetL[s] = 0f; _slotJetS[s] = 0f; _slotJetD[s] = 0f; }
+            if (_slotFresh[s]) { _slotJetL[s] = 0f; _slotJetS[s] = 0f; _slotJetD[s] = 0f; _jetMotion[s] = Vector4.zero; }
             float jetPush = Mathf.Pow(Mathf.Clamp01((u - 8f) / 60f), 0.6f);
             float jetTarget = outletCount > 0 && c.EnginesActive ? channel * Mathf.Clamp01(source * 1.3f) * jetPush : 0f;
             bool feeding = jetTarget > 0.05f;
@@ -652,19 +773,32 @@ namespace GroundBlastFx.Rendering
             float cloudTau = Mathf.Clamp(1f / Mathf.Max(decay + 0.012f, 1e-3f), 6f, 60f);
             float jetTau = jetTarget > _slotJetS[s] ? 0.25f : cloudTau;
             _slotJetS[s] += (jetTarget - _slotJetS[s]) * (1f - Mathf.Exp(-_dt / jetTau));
-            float jetMax = JetLength(rmax);
+            // 1.0.2 : avec les bouffées, le jet visible n'est plus qu'une langue de feu à la sortie des bouches (3 largeurs
+            // de bouche) : les bouffées sont la vapeur. Plus long, ce cône analytique (absent des bouffées) se voyait dans le
+            // nuage comme un « deuxième panache dans le premier » (retour de l'auteur en jeu).
+            bool puffJets = c.Surface == SurfaceKind.LaunchPad && !vacuum && HasDeflector(ref c);
+            float jetMax = puffJets ? Mathf.Min(JetLength(rmax) * 0.5f, 3f * bo) : JetLength(rmax);
+            if (feeding) _jetMotion[s].x = exitSpeed;
+            _jetMotion[s].y = puffJets ? 1f : 0f;
             if (feeding)
             {
                 _slotJetL[s] = Mathf.Min(jetMax, _slotJetL[s] + Mathf.Clamp(25f + 1.25f * exitSpeed, 55f, 220f) * _dt);
                 _slotJetD[s] = Mathf.Max(0f, _slotJetD[s] - Mathf.Max(45f, exitSpeed) * _dt);
             }
-            // Décrochage réglé pour finir quand le jet est presque effacé (≈ 3 fois sa durée de fondu).
-            else if (_slotJetL[s] > 0f) _slotJetD[s] += 1.1f * _slotJetL[s] / (3f * cloudTau) * _dt;
-            if (_slotJetL[s] > 0f && _slotJetD[s] > 1.1f * _slotJetL[s]) { _slotJetL[s] = 0f; _slotJetS[s] = 0f; _slotJetD[s] = 0f; }
+            // La coupure voyage dans le jet déjà présent à la vitesse de sortie, ralentie en aval.
+            // Aucun apport résiduel : UpdatePuffs reçoit toujours jetTarget, qui est nul après la coupure.
+            else if (_slotJetL[s] > 0f)
+                _slotJetD[s] += (puffJets
+                    ? _jetMotion[s].x / (1f + _slotJetD[s] / (5f * bo))
+                    : 1.1f * _slotJetL[s] / (3f * cloudTau)) * _dt;
+            if (_slotJetL[s] > 0f && _slotJetD[s] > (puffJets ? 1.2f : 1.1f) * _slotJetL[s])
+            { _slotJetL[s] = 0f; _slotJetS[s] = 0f; _slotJetD[s] = 0f; _jetMotion[s].x = 0f; }
             float jetR0 = Mathf.Clamp(0.05f * rmax, 3f, 10f);
             _jetX[s] = outletCount > 0 && _slotJetL[s] > 0.5f && _slotJetS[s] > 0.003f
                 ? new Vector4(Mathf.Max(_slotJetL[s], 2f), _slotJetS[s], jetR0, _slotJetD[s]) : Vector4.zero;
             _srcP[s] = SourceParams(ri, rmax, steam, c.Surface, E, Hg, channel, outletCount, _jetX[s]);
+            UpdatePuffs(s, ref c, vacuum, jetTarget, channel, exitSpeed, outletCount, rmax, ri, u, steam, windL, source, global, cloudTau, impulse);
+            ReportPadFlow(s, ref c, HasDeflector(ref c) && feeding, pulse, jetTarget, channel, exitSpeed, outletCount);
             _flowP[s] = new Vector4(windL.x, windL.y, rmax, decay);
             Vector3 trench = c.TrenchDirectionWorld;
             _jetDir[s] = new Vector4(Vector3.Dot(tang, east), Vector3.Dot(tang, north), Vector3.Dot(trench, east), Vector3.Dot(trench, north));
@@ -714,7 +848,7 @@ namespace GroundBlastFx.Rendering
             l.Position = c.NozzleCenterWorld;
             l.Color = c.FlameLightColor;
             // De jour, le soleil écrase la lueur (photos) : lumière faible, sinon le décor vire au jaune.
-            l.Intensity = Mathf.Min(flame * 0.8f, 4f) * Mathf.Lerp(0.12f, 1f, _night);
+            l.Intensity = Mathf.Min(flame * 0.8f, 4f) * Mathf.Lerp(0.12f, 1f, _night) * _effectBrightness;
             l.Range = Mathf.Clamp(Mathf.Max(ri * 6f, R * 0.4f), 12f, 120f);
         }
 
@@ -802,6 +936,7 @@ namespace GroundBlastFx.Rendering
             m.SetVectorArray("_GEOutletGround", _outletGround);
             m.SetVectorArray("_GEFlowX", _flowX);
             m.SetVectorArray("_GEJetX", _jetX);
+            m.SetVectorArray("_GEJetMotion", _jetMotion);
             m.SetVectorArray("_GEGroundInfo", _groundInfo);
             if (_groundTex != null) m.SetTexture("_GEGround", _groundTex);
             m.SetVectorArray("_GEOutletDir", _outletDir);
@@ -811,7 +946,6 @@ namespace GroundBlastFx.Rendering
         {
             Vector3 origin = cam.transform.position, fwd = cam.transform.forward;
             Vector4 sun = new Vector4(env.SunDir.x, env.SunDir.y, env.SunDir.z, 0f);
-            _fovTan = Mathf.Tan(0.5f * cam.fieldOfView * Mathf.Deg2Rad);
             Material m = _volume;
             m.SetInt(CountId, MaxClusters);
             m.SetInt("_GEMarkCount", _markCount);
@@ -849,6 +983,7 @@ namespace GroundBlastFx.Rendering
             m.SetFloat("_GEVolFar", volFar);
             UpdateCamera(cam);
             m.SetVector("_GESunDir", sun);
+            m.SetFloat("_GEEffectBrightness", _effectBrightness);
             m.SetColor("_GESunColor", env.SunColor);
             m.SetColor("_GEAmbientSky", env.AmbientSky);
             m.SetColor("_GEAmbientGround", env.AmbientGround);
@@ -874,8 +1009,8 @@ namespace GroundBlastFx.Rendering
                 _debris.SetVectorArray("_GEParams", _params);
                 _debris.SetVectorArray("_GEExtra", _extra);
                 _debris.SetVectorArray("_GEColorB", _colorB);
-                _debris.SetColor("_GESunColor", env.SunColor);
-                _debris.SetColor("_GEAmbientSky", env.AmbientSky);
+                _debris.SetColor("_GESunColor", env.SunColor * _effectBrightness);
+                _debris.SetColor("_GEAmbientSky", env.AmbientSky * _effectBrightness);
                 _debris.SetVector("_GESunDir", sun);
             }
         }
@@ -888,6 +1023,10 @@ namespace GroundBlastFx.Rendering
         public void UpdateCamera(Camera cam)
         {
             if (cam == null || _volume == null) return;
+            // Le zoom peut lui aussi changer après LateUpdate (mods de caméra) : les rayons et leur
+            // empreinte angulaire doivent provenir de la même caméra au moment du rendu.
+            _fovTan = Mathf.Tan(0.5f * cam.fieldOfView * Mathf.Deg2Rad);
+            if (_lowHeight > 0) _volume.SetFloat("_GEPixelAngle", 2f * _fovTan / _lowHeight);
             _volume.SetVector("_GECamera", cam.transform.position);
             _volume.SetVector("_GECamForward", cam.transform.forward);
             _volume.SetVector("_GERay00", cam.ViewportPointToRay(new Vector3(0f, 0f, 0f)).direction);
@@ -908,6 +1047,7 @@ namespace GroundBlastFx.Rendering
             if (!IsAvailable || (!hasClusters && (surfaceGroup == 2 || _markCount == 0))) return;
             cmd.SetGlobalInt(SurfaceGroupId, surfaceGroup);
             int lw = Math.Max(1, width / divisor), lh = Math.Max(1, height / divisor);
+            _lowHeight = lh;
             _volume.SetVector("_GELowTexel", new Vector4(1f / lw, 1f / lh, 0f, 0f));
             _volume.SetFloat("_GEPixelAngle", 2f * _fovTan / lh);
             // Couleur réelle du sol autour des foyers (passe 2), avant le volume qui s'en sert. La passe de l'eau (groupe 2)
@@ -929,6 +1069,21 @@ namespace GroundBlastFx.Rendering
             cmd.GetTemporaryRT(CopyId, width, height, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
             cmd.Blit(BuiltinRenderTextureType.CameraTarget, CopyId);
             cmd.Blit(CopyId, BuiltinRenderTextureType.CameraTarget, _volume, 1);
+            // 1.0.2 : profondeur du nuage opaque. Pas pour les embruns (passe après les transparents : le ciel est déjà dessiné).
+            // Sans nuage visible (seulement des traces au sol), rien à faire : la carte de profondeur du jeu reste intacte.
+            if (WriteCloudDepth && surfaceGroup != 2 && hasClusters)
+            {
+                // Carte de profondeur scène + nuage (passe 4), puis écriture dans le tampon de profondeur (passe 3) : Scatterer
+                // (versions publiques) dessine son ciel après nous, sur tout pixel resté à la profondeur du ciel (ticket GitHub
+                // n° 2).
+                cmd.GetTemporaryRT(CloudDepthId, width, height, 0, FilterMode.Point, RenderTextureFormat.RGFloat);
+                cmd.Blit(CopyId, CloudDepthId, _volume, 4);
+                cmd.Blit(CopyId, BuiltinRenderTextureType.CameraTarget, _volume, 3);
+                // Les effets dessinés après nous lisent cette carte à la place de celle de la caméra : la fumée d'autres mods
+                // qui s'y cale (traînées volumétriques des boosters) ne passe plus devant notre nuage. Pas de libération ici :
+                // la texture temporaire reste valable jusqu'à la fin du rendu de la caméra.
+                cmd.SetGlobalTexture(CameraDepthTexId, CloudDepthId);
+            }
             if (_debrisBuffer != null && HasParticles(surfaceGroup))
                 cmd.DrawProceduralIndirect(Matrix4x4.identity, _debris, 0, MeshTopology.Triangles, _debrisArgs);
             cmd.ReleaseTemporaryRT(CopyId);
@@ -1019,7 +1174,10 @@ namespace GroundBlastFx.Rendering
                 _compute.SetVectorArray("_GEGroundInfo", _groundInfo);
                 if (_groundTex != null) _compute.SetTexture(_simKernel, "_GEGround", _groundTex);
                 _compute.SetVectorArray("_GEOutletDir", _outletDir);
-                for (int i = 0; i < MaxClusters; i++) _simFlags[i] = new Vector4(_simReset[i], _simStep[i], 0f, 0f);
+                for (int i = 0; i < MaxClusters; i++) _simFlags[i] = new Vector4(_simReset[i], _simStep[i], _puffMode[i] ? 1f : 0f, 0f);
+                if (_puffBuffer == null) _puffBuffer = new ComputeBuffer(_puffData.Length, 16);
+                _puffBuffer.SetData(_puffData);
+                _compute.SetBuffer(_simKernel, "_GEPuffs", _puffBuffer);
                 _compute.SetVectorArray("_GESimFlags", _simFlags);
                 // Bas : un pas pour 3 images (pas de temps plus long, transport semi-lagrangien stable).
                 _compute.SetFloat("_DeltaTime", Mathf.Clamp(dt, 0.001f, _quality == QualityLevel.Low ? 0.08f : 0.05f));
@@ -1118,6 +1276,7 @@ namespace GroundBlastFx.Rendering
         public void Dispose()
         {
             ReleaseSimulation();
+            if (_puffBuffer != null) { _puffBuffer.Release(); _puffBuffer = null; }
             ReleaseDebris();
             if (_volume != null) { UnityEngine.Object.DestroyImmediate(_volume); _volume = null; }
             if (_debris != null) { UnityEngine.Object.DestroyImmediate(_debris); _debris = null; }

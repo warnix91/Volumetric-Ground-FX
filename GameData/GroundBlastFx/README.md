@@ -1,70 +1,59 @@
-# GroundBlastFx 1.0.1
+# Volumetric Ground FX (VGFX) 1.1.0
 
-Volumetric ground effects for rocket engines in Kerbal Space Program 1.12: dust, launch pad steam, water spray, vacuum
-ejecta, scorch marks and flame light, all driven by the real thrust, height, surface, atmosphere and propellant of each
-engine.
+VGFX adds volumetric dust, launch-pad steam, water spray and surface marks to rocket engines in KSP. The effects respond to engine thrust, distance from the ground, surface type and atmosphere. Launch-pad steam travels out of the flame trench and forms clouds that keep moving after the engines stop.
+
+Formerly **GroundBlastFx**. Version 1.1.0 adds more detailed pad steam, a smoother transition from the outlet jet to the cloud, and a brief blast when boosters ignite or thrust rises sharply.
 
 ## Requirements
 
-- Kerbal Space Program 1.12.x
-- **Windows with Direct3D 11** (the default renderer). OpenGL, Metal, macOS and Linux are not supported: on those, the
-  mod stays inactive.
-- A GPU with compute shader support. No other mod is required.
+- KSP 1.12.x on Windows, using Direct3D 11.
+- A GPU with compute shader support.
+- No other mod is required. OpenGL, Metal, macOS and Linux are not supported.
 
-## Installation
+## Installation and updates
 
-Copy the `GroundBlastFx` folder into `Kerbal Space Program/GameData`. To update, delete the old `GroundBlastFx` folder
-first (your settings live in `PluginData/Settings.cfg`; keep that file if you want them).
+Copy `GameData/GroundBlastFx` from `VGFX-1.1.0.zip` into your KSP folder. For an update, replace the existing files in that same folder. Keep `PluginData/Settings.cfg` and `PluginData/LaunchSites_user.cfg` if they exist. Saved surface marks remain in your game save.
 
-## In game
+Install one copy. The folder is still named `GroundBlastFx`; do not add a second folder named `VGFX`.
 
-- Click the **GroundBlastFx** button in the flight toolbar to open the settings window.
-- **Effect density**: amount of dust and steam (it does not change render detail).
-- **Visible range**: how far away clouds are drawn.
-- KSP's game settings (Difficulty options) have a **GroundBlastFx** tab with the same two settings, plus each effect on
-  or off, keeping marks in the save, and hiding stock ground dust.
-- The window follows the game language: English, French, German, Spanish, Italian, Portuguese, Russian, Simplified
-  Chinese, Japanese.
-- Stock ground dust is hidden while the mod runs, so the two do not overlap.
-- Scorch marks are saved with your game and are still there when you come back to a site.
+## Settings
 
-## Features
+Open the VGFX window from the flight toolbar, or the **Volumetric Ground FX (VGFX)** section in KSP's Difficulty options.
 
-- Simulated 3D clouds (on the GPU) anchored to the ground: they stay where they were made, drift with the wind, follow
-  the terrain and dissipate over time. Several engines close together make one cloud.
-- Launch pads: steam jets out of the real flame-trench outlets of the pad, grows with thrust, and billows into big
-  clouds.
-- Dust takes the color of the ground actually on screen (works with or without Parallax), with palettes per body and
-  biome for stock planets. Snow and ice blow white; thin air (Duna) gives a low cloud and a fast sheet of grains.
-- Water: spray cloud and droplets. Airless bodies: a thin, streaked ejecta sheet that stops as soon as the engine cuts,
-  and a blast mark left on the ground.
-- Scorch marks depend on the ground (scorched grass, darkened soil or concrete) and on the propellant (kerolox soot,
-  cleaner methalox and hydrolox).
-- Cloud shadows on the ground and on the vessel; flame light on the clouds by day and by night.
+- **Effect density** adjusts the amount of dust and steam.
+- **Visible range** sets how far away clouds are drawn.
+- **Effect brightness** ranges from 50% to 150%, with a default of 85%. It changes the light, keeping the same cloud shape and opacity.
+- **Ignition blast** ranges from 0% to 200%, with a default of 100%. It changes the short burst at ignition or a sudden increase in thrust, without changing vessel thrust.
+- **Reset brightness and blast** restores those two defaults.
 
-## Compatibility
+The game settings also include individual effects, saved surface marks and stock ground-dust replacement. The interface follows the game language: English, French, German, Spanish, Italian, Portuguese, Russian, Simplified Chinese or Japanese.
 
-Used during development alongside Waterfall, Scatterer, EVE, Parallax Continued, Kopernicus, TUFX, Deferred, SmokeScreen,
-RealPlume and Firefly. Other mods that draw their own engine dust on the ground (for example KerbalFX ImpactPuffs or
-PlumeDynamics) will overlap with this one; disable one of them. Kerbal Konstructs launch pads with declared smoke outlets
-are supported but have been tested less. RSS/RP-1 has not been tested yet.
+## Effects
 
-## Performance
+- Launch-pad steam flows through the declared trench outlets, then expands into large billowing clouds.
+- Dust follows the terrain and takes its colour from the ground, with body and biome palettes as a fallback. Snow and ice produce pale clouds; thin atmospheres produce lower clouds and fast ground-hugging grains.
+- Water produces spray and droplets. Airless bodies produce a low ejecta sheet and a surface mark instead of floating smoke.
+- Scorch marks depend on the surface and propellant, and can be saved with the game.
+- Cloud shadows and warm flame light help the effects sit in the scene by day and at night.
 
-Clouds are rendered at full detail on every machine. On a recent GPU the cost is a few milliseconds per frame near a
-large launch; older or entry-level GPUs will notice it.
+## Compatibility and performance
 
-## Problems
+Development has used Waterfall, Scatterer, EVE, Parallax Continued, Kopernicus, TUFX, Deferred, SmokeScreen, RealPlume and Firefly. Kerbal Konstructs pads are supported when they declare smoke outlets. RSS/RP-1 has not been tested.
 
-Please attach `KSP.log`, `GameData/GroundBlastFx/PluginData/GroundBlastFx.log` and a screenshot.
+Another mod that adds its own engine dust or pad steam may draw overlapping effects. Avoid enabling both ground-effect systems at once. VGFX restores stock ground effects if its renderer is unavailable.
 
-## License
+Large clouds can be demanding. Performance depends on your GPU, screen resolution and the scene. Density and visible range can reduce the amount of work.
 
-MIT (see `LICENSE`), by Warnix. Developed with the help of AI coding assistants; see `CREDITS.md` for the published techniques it is
-based on.
+## Bug reports
+
+Include your KSP version, the other visual mods involved, a screenshot and `KSP.log` plus `GameData/GroundBlastFx/PluginData/GroundBlastFx.log`. Check logs for personal paths or other private information before sharing them.
+
+## Licence
+
+MIT, by Warnix. See `LICENSE` and `CREDITS.md`.
 
 ---
 
-**Français** : effets au sol volumétriques des moteurs-fusées pour KSP 1.12 (Windows, Direct3D 11). Copier le dossier
-`GroundBlastFx` dans `GameData`. En vol, le bouton GroundBlastFx ouvre la fenêtre (densité des effets, portée visible) ; les mêmes réglages sont dans les paramètres de la partie de KSP, onglet GroundBlastFx ;
-la langue suit celle du jeu. Journal : `PluginData/GroundBlastFx.log`. Licence MIT.
+**Français :** effets au sol volumétriques pour KSP 1.12.x, Windows/DX11. Copier `GameData/GroundBlastFx` dans le dossier KSP. Pour une mise à jour, conserver les réglages de `PluginData` et installer une seule copie. Le bouton VGFX ouvre les réglages de densité, portée, luminosité et souffle ; la langue suit celle du jeu.
+
+Ground marks are enabled by default. In the VGFX window, disable **Ground marks** to hide existing marks and stop creating new ones. **Keep marks in save** controls persistence between sessions. **Clear all ground marks** removes the current game's marks; the removal is recorded on the next normal save. Older quicksaves and backups can restore their own marks. Running engines can create fresh marks after clearing.

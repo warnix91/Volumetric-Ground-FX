@@ -8,7 +8,7 @@ Shader "GroundBlastFx/GroundVolume"
     //           ciel/sol ambiants, flamme, perspective aérienne. Vide : nappe rasante (pas de grille).
     // Passe 1 : composition pleine résolution (suréchantillonnage bilatéral guidé par la profondeur)
     //           + traces au sol en espace écran.
-    Properties { _MainTex ("Image", 2D) = "white" {} _GENoise ("Bruit volumique", 3D) = "white" {} }
+    Properties { _GEEffectBrightness ("Luminosité des effets", Float) = 1 _MainTex ("Image", 2D) = "white" {} _GENoise ("Bruit volumique", 3D) = "white" {} }
     SubShader
     {
         Tags { "RenderType"="Opaque" "Queue"="Transparent+100" }
@@ -44,6 +44,7 @@ Shader "GroundBlastFx/GroundVolume"
             float _GEDebugMode;
             float _GEDetailLevel;     // 0 = Bas, 1 = Moyen, 2 = Haut/Ultra
             float _GEPixelAngle;      // angle d'un pixel de la passe réduite (rad)
+            float _GEEffectBrightness; // Gain RGB ; aucune action sur la densité/profondeur.
             float _GENight;           // 0 plein jour … 1 nuit (lueur des flammes visible seulement dans l'obscurité)
             int _GECount, _GESteps, _GELightSteps, _GESurfaceGroup;
             // Taille d'un pixel de la passe réduite (m, ×4) au point marché, et poids du détail fin : servent à effacer un
@@ -195,7 +196,9 @@ Shader "GroundBlastFx/GroundVolume"
                 float bo = max(fx.z, 1.0);
                 // Vitesse visuelle quasi constante le long du jet (plafonnée) : peu de cisaillement, pas d'étirement.
                 // Jets qui fusent (1.7) : défilement plus rapide, période plus courte (même étirement par cycle).
-                float uVis = min(fx.y * (5.0 * bo) / (5.0 * bo + max(s, 0.0)), 85.0) + 2.0;
+                float puffJet = saturate(_GEJetMotion[k].y);
+                float speed = lerp(fx.y, _GEJetMotion[k].x, puffJet);
+                float uVis = min(speed * (5.0 * bo) / (5.0 * bo + max(s, 0.0)), 85.0) + 2.0;
                 // Taille des bourgeons ≈ rayon du jet à mi-longueur (échelle fixe par jet : aucun motif en rayons).
                 float rMid = jx.z + GE_JET_OPENING * 0.5 * jx.x;
                 float scale = 1.0 / max(rMid * 1.1, 3.0);
@@ -214,12 +217,9 @@ Shader "GroundBlastFx/GroundVolume"
                     big += w * (n.r * 0.55 + n.g * 0.45);
                     fine += w * (_GEDetailLevel > 0.5 ? N4(q * 2.1 + 0.29).b : n.b);
                 }
-                // 1.8.1 : un jet qui s'éteint (fusée partie) se déchire en bouffées (seules les bosses les plus hautes du bruit
-                // survivent) au lieu de devenir un tube fantôme uniformément transparent entre le pas et le nuage.
-                // 1.9.2 : dès que le débit baisse (fusée qui monte, jet qui s'éteint), pas seulement sous la moitié.
-                // 1.9.3 : un jet décroché de la bouche (plus alimenté) se défait tout de suite en bouffées ; avant, il
-                // glissait au loin en gros boudin dense (« nuage persistant » vu de dessus après le décollage).
-                float detach = saturate(jx.w / max(0.08 * jx.x, 6.0));
+                // Le front de coupure est déjà appliqué localement par GEJetShape. Affaiblir tout le jet
+                // selon jx.w effaçait aussi la vapeur en aval avant que la coupure ne l'atteigne.
+                float detach = (1.0 - puffJet) * saturate(jx.w / max(0.08 * jx.x, 6.0));
                 float live = smoothstep(0.2, 0.85, jx.y) * (1.0 - detach);
                 float d = saturate(Remap(big, saturate(1.0 - a * 1.2 * live), 1.0, 0.0, 1.0));
                 // Détail fin propre aux jets (≈ rMid / 12) : effacé quand il passe sous ~4 pixels (sinon rayures à distance).
@@ -317,7 +317,11 @@ Shader "GroundBlastFx/GroundVolume"
                     density *= lerp(0.55, 1.0, saturate(f * 2.0));
                 }
                 float jetD = JetDensity(k, p, fineW);
-                return max(density, jetD) + 0.3 * min(density, jetD);
+                // Le jet cède aux bouffées là où leur champ devient dense. Même nuage, sans double
+                // texture ni somme de vapeur dans le chevauchement ; aucune action hors du jet.
+                float puffJet = saturate(_GEJetMotion[k].y);
+                jetD *= 1.0 - puffJet * smoothstep(0.08, 0.65, f);
+                return max(density, jetD) + 0.3 * min(density, jetD) * (1.0 - puffJet);
             }
 
             float Extinction(int k, float Rm)
@@ -331,6 +335,14 @@ Shader "GroundBlastFx/GroundVolume"
             }
 
             // Marche dans la grille ancrée du foyer k. Renvoie la lumière prémultipliée et l'opacité ; tEnter = distance d'entrée.
+            // Distance d'un point au segment [a, b].
+            float DistSeg(float3 p, float3 a, float3 b)
+            {
+                float3 ab = b - a;
+                float t = saturate(dot(p - a, ab) / max(dot(ab, ab), 1e-6));
+                return length(p - a - ab * t);
+            }
+
             float4 MarchGrid(int k, float3 ray, float sceneDistance, float jitter, out float tEnter)
             {
                 tEnter = 1e9;
@@ -373,6 +385,33 @@ Shader "GroundBlastFx/GroundVolume"
                 float3 flameP = _GEFlamePoints[k].xyz;
                 // Portée de la lueur : le bas du nuage près de la flamme, pas tout le nuage (photos de jour).
                 float flameRange = (min(max(_GESrc[k].w * 5.0, Rm * 0.18), Rm * 0.35) + 5.0) * lerp(1.0, 2.2, _GENight);
+                // 1.0.2 : feu du pas à la Juno: New Origins. Sur un pas de tir, le pied du nuage est éclairé de l'intérieur par
+                // toute la partie chaude de la flamme (de la tuyère vers le sol) et par le feu qui sort des bouches de la
+                // tranchée : crème-jaune près du feu, orange plus loin, net même de jour ; de nuit, tout le nuage rougeoie.
+                bool padFire = _GEMisc[k].y > 1.5 && _GEMisc[k].y < 2.5;
+                float fireAmt = padFire ? saturate(_GEFlames[k].a) : 0.0;
+                float3 fireA = 0, fireB = 0, out0 = 0, out1 = 0, dir0 = 0, dir1 = 0, fireTint = 1;
+                float fireR = 1, jetFireL = 0, w0 = 0, w1 = 0;
+                if (fireAmt > 0.001)
+                {
+                    float3 relF = flameP - _GEGridO[k].xyz;
+                    fireA = float3(dot(relF, east), dot(relF, up), dot(relF, north));          // tuyère, repère de la grille
+                    float3 toImpact = _GESrc[k].xyz - fireA;
+                    float lenI = length(toImpact);
+                    float hotLen = clamp(Rm * 0.25, 30.0, 150.0);                            // partie chaude de la flamme
+                    fireB = fireA + toImpact * (min(lenI, hotLen) / max(lenI, 1e-3));
+                    fireR = clamp(Rm * 0.3, 20.0, 160.0) * lerp(1.0, 2.0, _GENight);
+                    float4 o0 = _GEOutlets[2 * k], o1 = _GEOutlets[2 * k + 1];
+                    out0 = float3(o0.x, o0.z, o0.y); out1 = float3(o1.x, o1.z, o1.y);
+                    float2 od0 = GEOutletDirection(k, 0, o0), od1 = GEOutletDirection(k, 1, o1);
+                    dir0 = float3(od0.x, 0, od0.y); dir1 = float3(od1.x, 0, od1.y);
+                    w0 = o0.w > 0.01 ? 1.0 : 0.0; w1 = o1.w > 0.01 ? 1.0 : 0.0;
+                    // Feu à la sortie des bouches tant que le jet souffle : sur ~0,35 de la portée des bouffées (la moitié de
+                    // la longueur de jet du nuage), indépendamment du jet visible, raccourci en langue de feu.
+                    jetFireL = 0.35 * 0.5 * clamp(1.45 * Rm, 50.0, 400.0) * saturate(_GEJetX[k].y * 2.0);
+                    float3 prop = _GEFlames[k].rgb / max(max(_GEFlames[k].r, _GEFlames[k].g), max(_GEFlames[k].b, 1e-3));
+                    fireTint = lerp(1.0, prop, 0.5);   // la couleur de l'ergol nuance le feu (kérolox plus orange)
+                }
                 float lightStep = max(cell * 1.2, 1.0);
                 float fineWave = clamp(Rm * 0.11, 2.5, 60.0) / 9.5; // longueur d'onde du détail fin (m)
                 bool waterMarch = _GEMisc[k].y > 3.5 && _GEMisc[k].y < 4.5;
@@ -507,6 +546,23 @@ Shader "GroundBlastFx/GroundVolume"
                     // Lueur forte au pied du nuage, qui s'éteint vite au-delà de la portée : de jour, le reste du nuage
                     // de vapeur reste blanc (photos de décollages), la nuit la portée est plus grande.
                     float3 flame = flameCol * (2.8 * exp(-1.6 * fd * fd) + 0.25 * _GENight / (1 + fd * fd * 4.0)) * (0.35 + 0.65 * exp(-d * 0.9)) * (1 - hf * 0.55);
+                    if (fireAmt > 0.001)
+                    {
+                        float dCol = DistSeg(p, fireA, fireB);
+                        float dJet = 1e6;
+                        if (jetFireL > 1.0)
+                        {
+                            if (w0 > 0.5) dJet = min(dJet, DistSeg(p, out0, out0 + dir0 * jetFireL));
+                            if (w1 > 0.5) dJet = min(dJet, DistSeg(p, out1, out1 + dir1 * jetFireL));
+                        }
+                        // De jour, lueur plus serrée autour du feu (au-delà, l'orange sur le blanc bleuté virait au rose) ;
+                        // de nuit, elle porte loin. Cœur crème resserré : le relief des bouffées reste lisible.
+                        float r2 = fireR * fireR * lerp(0.55, 1.0, _GENight);
+                        float g = exp(-dCol * dCol / r2) + 0.8 * exp(-dJet * dJet / (0.35 * r2));
+                        float hot = saturate(exp(-dCol * dCol / (0.06 * r2)) + 0.5 * exp(-dJet * dJet / (0.04 * r2)));
+                        float3 fire = lerp(float3(1.0, 0.42, 0.1), float3(1.0, 0.84, 0.55), hot) * fireTint;
+                        flame = fire * fireAmt * lerp(2.2, 2.4, _GENight) * g * (0.35 + 0.65 * exp(-d * 0.9));
+                    }
                     // À la bouche le panache est chaud et orangé. La lumière de la tuyère ne doit pas
                     // saturer la vapeur en blanc dans un tube parfaitement régulier.
                     float mouthGlow = hasJets ? JetGlow(k, p) * saturate(_GEFlames[k].a) : 0.0;
@@ -729,7 +785,8 @@ Shader "GroundBlastFx/GroundVolume"
                 float3 surfN = normalize(cross(ddx(surfW), ddy(surfW)) + 1e-6);
                 float4 c[4];
                 float te[4];
-                [unroll] for (int k = 0; k < 4; k++)
+                // Garder une seule marche compilée : la duplication des quatre foyers dépasse le délai du compilateur DX11.
+                [loop] for (int k = 0; k < 4; k++)
                 {
                     c[k] = 0; te[k] = 1e9;
                     if (_GEParams[k].x < 0.002) continue;
@@ -770,6 +827,8 @@ Shader "GroundBlastFx/GroundVolume"
                     result.a += (1 - result.a) * v.a;
                     te[best] = 1e10;
                 }
+                // Après l'intégration : transparence, ombres et contours restent identiques.
+                result.rgb *= _GEEffectBrightness;
                 return result;
             }
             ENDCG
@@ -1087,6 +1146,121 @@ Shader "GroundBlastFx/GroundVolume"
                 float rate = saturate(_GEGroundColW[k].z / 1.5) * saturate(wsum / 6.0);
                 if (prev.a < 0.01) rate = saturate(wsum / 6.0);
                 return float4(lerp(prev.rgb, alb, rate), lerp(prev.a, 1.0, rate));
+            }
+            ENDCG
+        }
+        // Passe 3 (1.0.2) : profondeur du nuage opaque dans le tampon de profondeur. Scatterer (versions publiques) dessine son
+        // ciel APRÈS nos nuages, sur tout pixel resté à la profondeur du ciel : vu devant le ciel, le nuage était remplacé par du
+        // ciel (et les nuages EVE lointains passaient devant lui). On écrit la distance de la partie dense du nuage là où il est
+        // opaque (calculée par la passe 4) : ce qui est derrière lui est caché, ce qui est devant (panache de la fusée) reste
+        // visible. La couleur n'est pas modifiée.
+        Pass
+        {
+            // Couleur inchangée par le mélange (Zero, One) : avec « ColorMask 0 », la profondeur n'était pas écrite (banc).
+            Blend Zero One
+            ZWrite On
+            ZTest Always
+            CGPROGRAM
+            #pragma target 4.5
+            #pragma vertex vert_img
+            #pragma fragment fragDepth
+            #include "UnityCG.cginc"
+            sampler2D_float _GECloudDepth;   // passe 4 : r = profondeur brute, g = 1 là où le nuage est devant la scène
+
+            fixed4 fragDepth(v2f_img i, out float outDepth : SV_Depth) : SV_Target
+            {
+                float2 m = tex2D(_GECloudDepth, i.uv).rg;
+                outDepth = m.r;
+                if (m.g < 0.5) discard;
+                return 0;
+            }
+            ENDCG
+        }
+        // Passe 4 (1.0.2) : carte de profondeur de la scène avec la partie opaque du nuage, en pleine résolution. Elle sert à la
+        // passe 3 et remplace _CameraDepthTexture pour tout ce qui est dessiné après nous : la fumée d'autres mods qui se cale
+        // sur cette carte (traînées volumétriques des boosters, par exemple) ne passe plus devant notre nuage quand elle est
+        // derrière lui ou dedans (ticket : « deuxième panache dans le premier », montagnes visibles à travers la fumée).
+        Pass
+        {
+            ZWrite Off
+            ZTest Always
+            CGPROGRAM
+            #pragma target 4.5
+            #pragma vertex vert_img
+            #pragma fragment fragCloudDepth
+            #include "UnityCG.cginc"
+            #include "GEFlow.cginc"
+            sampler2D _GELowTex, _CameraDepthTexture;
+            sampler3D _GEField;
+            float4 _GEFieldDims;
+            float4 _GEParams[4];
+            float _GESimBlend;
+            float4 _GECamera, _GECamForward, _GERay00, _GERay10, _GERay01, _GERay11;
+
+            float3 RayAt(float2 uv)
+            {
+                float3 a = lerp(_GERay00.xyz, _GERay10.xyz, uv.x);
+                float3 b = lerp(_GERay01.xyz, _GERay11.xyz, uv.x);
+                return normalize(lerp(a, b, uv.y));
+            }
+
+            float FieldAt(int k, float3 p)
+            {
+                float3 uvw = GEGridUv(k, p);
+                if (any(uvw <= 0.0) || any(uvw >= 1.0)) return 0;
+                float zc = clamp(uvw.z, 0.5 / _GEFieldDims.z, 1.0 - 0.5 / _GEFieldDims.z);
+                return tex3Dlod(_GEField, float4(uvw.x, uvw.y, (k + zc) / _GEFieldDims.w, 0)).r;
+            }
+
+            float4 fragCloudDepth(v2f_img i) : SV_Target
+            {
+                float raw = SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture, i.uv);
+                if (_GESimBlend < 0.5 || tex2D(_GELowTex, i.uv).a < 0.5) return float4(raw, 0, 0, 0);
+                float3 ray = RayAt(i.uv);
+                float fwd = max(dot(ray, normalize(_GECamForward.xyz)), 0.05);
+                #if defined(UNITY_REVERSED_Z)
+                bool sky = raw < 0.0001;
+                #else
+                bool sky = raw > 0.9999;
+                #endif
+                float scene = sky ? 1e9 : LinearEyeDepth(raw) / fwd;
+                float best = 1e9;
+                [loop] for (int k = 0; k < 4; k++)
+                {
+                    // Nuages sur grille seulement (pas la nappe du vide), visibles.
+                    if (_GEParams[k].x < 0.002 || _GEParams[k].w > 0.5 || _GEGridN[k].w < 0.002) continue;
+                    float3 east, up, north;
+                    GEBasis(k, east, up, north);
+                    float E = max(_GEGridO[k].w, 1.0), Hg = max(_GEGridU[k].w, 1.0);
+                    float3 o = _GECamera.xyz - _GEGridO[k].xyz;
+                    float3 lo = float3(dot(o, east), dot(o, up), dot(o, north));
+                    float3 ld = float3(dot(ray, east), dot(ray, up), dot(ray, north));
+                    float3 inv = 1.0 / (abs(ld) > 1e-6 ? ld : (ld >= 0 ? 1e-6 : -1e-6));
+                    float3 ta = (float3(-E, -1.0, -E) - lo) * inv, tb = (float3(E, Hg, E) - lo) * inv;
+                    float3 tmin = min(ta, tb), tmax = max(ta, tb);
+                    float enter = max(max(max(tmin.x, tmin.y), tmin.z), 0.0);
+                    float leave = min(min(min(tmax.x, tmax.y), tmax.z), min(scene, best));
+                    if (leave <= enter) continue;
+                    float cell = 2.0 * E / max(_GEFieldDims.x, 1.0);
+                    float stepL = max(cell * 0.75, (leave - enter) / 160.0);
+                    // Surface = là où le nuage rendu devient à moitié opaque (même extinction et même couverture que la
+                    // passe 0, sans le détail fin) : un seuil fixe sur la densité brute laissait passer les fumées d'autres
+                    // mods sur le haut des bouffées, plus diluées mais visiblement opaques.
+                    bool waterK = _GEMisc[k].y > 3.5 && _GEMisc[k].y < 4.5;
+                    float Rm = max(_GEFlowP[k].z, 4.0);
+                    float sigma = (waterK ? 0.16 : lerp(0.2, 0.28, _GEJet[k].z)) * saturate(90.0 / Rm + 0.75) * _GEParams[k].x;
+                    float covTop = waterK ? 1.2 : lerp(1.6, 0.6, _GEJet[k].z);
+                    float tau = 0;
+                    [loop] for (float t = enter; t < leave; t += stepL)
+                    {
+                        float f = FieldAt(k, lo + ld * t);
+                        tau += smoothstep(waterK ? 0.03 : 0.0, covTop, f) * sigma * stepL;
+                        if (tau > 0.7) { best = min(best, t); break; }
+                    }
+                }
+                if (best >= scene || best > 1e8) return float4(raw, 0, 0, 0);
+                float eye = best * fwd;
+                return float4((1.0 / eye - _ZBufferParams.w) / _ZBufferParams.z, 1, 0, 0);
             }
             ENDCG
         }

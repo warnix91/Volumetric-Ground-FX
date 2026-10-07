@@ -6,7 +6,7 @@ using UnityEngine;
 namespace GroundBlastFx.Config
 {
     /// <summary>
-    /// Onglet « GroundBlastFx » dans les paramètres de la partie de KSP (Difficulté du jeu). Mêmes réglages que la fenêtre
+    /// Onglet « Volumetric Ground FX (VGFX) » dans les paramètres de la partie de KSP (Difficulté du jeu). Mêmes réglages que la fenêtre
     /// en vol (densité des effets, portée visible), plus les effets à activer et deux options. Les réglages restent communs à toutes les parties (Settings.cfg) :
     /// l'onglet affiche les valeurs actuelles et les applique quand le joueur valide.
     /// Textes : Localization/GroundBlastFx.cfg (langue du jeu).
@@ -14,7 +14,7 @@ namespace GroundBlastFx.Config
     public sealed class GeStockParams : GameParameters.CustomParameterNode
     {
         public override string Title => "#GBFX_Params_Title";
-        public override string DisplaySection => "GroundBlastFx";
+        public override string DisplaySection => "Volumetric Ground FX (VGFX)";
         public override string Section => "GroundBlastFx";
         public override int SectionOrder => 1;
         public override GameParameters.GameMode GameMode => GameParameters.GameMode.ANY;
@@ -27,6 +27,14 @@ namespace GroundBlastFx.Config
         [GameParameters.CustomFloatParameterUI("#GBFX_Params_Range", toolTip = "#GBFX_Params_RangeTip",
             minValue = 0.5f, maxValue = 20f, stepCount = 40, displayFormat = "N1")]
         public float rangeKm = 8f;
+
+        [GameParameters.CustomFloatParameterUI("#GBFX_Params_Brightness", toolTip = "#GBFX_Params_BrightnessTip",
+            minValue = VisualTuning.MinBrightness, maxValue = VisualTuning.MaxBrightness, stepCount = 21, asPercentage = true)]
+        public float effectBrightness = VisualTuning.DefaultBrightness;
+
+        [GameParameters.CustomFloatParameterUI("#GBFX_Params_IgnitionStrength", toolTip = "#GBFX_Params_IgnitionStrengthTip",
+            minValue = VisualTuning.MinIgnitionStrength, maxValue = VisualTuning.MaxIgnitionStrength, stepCount = 41, asPercentage = true)]
+        public float ignitionStrength = VisualTuning.DefaultIgnitionStrength;
 
         [GameParameters.CustomParameterUI("#GBFX_Params_Dust", toolTip = "#GBFX_Params_DustTip")]
         public bool dust = true;
@@ -53,6 +61,8 @@ namespace GroundBlastFx.Config
 
         public void CopyFromSettings()
         {
+            effectBrightness = VisualTuning.Brightness(GeSettings.Renderer.EffectBrightness);
+            ignitionStrength = VisualTuning.IgnitionStrength(GeSettings.Renderer.IgnitionStrength);
             density = GeSettings.Renderer.GlobalIntensity;
             rangeKm = GeSettings.Renderer.MaxRenderDistanceM / 1000f;
             RendererSettings r = GeSettings.Renderer;
@@ -65,12 +75,17 @@ namespace GroundBlastFx.Config
         {
             float d = Mathf.Clamp(density, 0.25f, 2f);
             float r = Mathf.Clamp(rangeKm * 1000f, 500f, 20000f);
+            float brightness = VisualTuning.Brightness(effectBrightness);
+            float strength = VisualTuning.IgnitionStrength(ignitionStrength);
             RendererSettings s = GeSettings.Renderer;
-            bool same = Math.Abs(d - s.GlobalIntensity) < 1e-3f && Math.Abs(r - s.MaxRenderDistanceM) < 1f
+            bool same = Math.Abs(brightness - s.EffectBrightness) < 1e-4f && Math.Abs(strength - s.IgnitionStrength) < 1e-4f
+                        && Math.Abs(d - s.GlobalIntensity) < 1e-3f && Math.Abs(r - s.MaxRenderDistanceM) < 1f
                         && dust == s.EnableDust && padSteam == s.EnablePadSteam && water == s.EnableWater
                         && vacuum == s.EnableVacuumEjecta && scorch == s.EnableScorch && flameLight == s.EnableFlameGroundLight
                         && keepMarks == GeSettings.PersistentMarks && hideStock == GeSettings.HideStockSurfaceFx;
             if (same) return false;
+            s.EffectBrightness = brightness;
+            s.IgnitionStrength = strength;
             s.GlobalIntensity = d;
             s.MaxRenderDistanceM = r;
             s.EnableDust = dust; s.EnablePadSteam = padSteam; s.EnableWater = water; s.EnableVacuumEjecta = vacuum;

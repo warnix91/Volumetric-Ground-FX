@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Copie dans UnityProject/Assets/Editor/Shared les sources C# communes au jeu et au harnais Unity :
     contrat (Contracts.cs), modèle physique (Physics/*.cs) et cœur de rendu (Rendering/RenderCore.cs).
@@ -11,7 +11,11 @@ $dst = Join-Path $repo 'UnityProject\Assets\Editor\Shared'
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
 $files = @(
     (Join-Path $src 'Contracts\Contracts.cs'),
-    (Join-Path $src 'Rendering\RenderCore.cs')
+    (Join-Path $src 'Contracts\VisualTuning.cs'),
+    (Join-Path $src 'Rendering\RenderCore.cs'),
+    (Join-Path $src 'Rendering\ThrustPulse.cs'),
+    (Join-Path $src 'Rendering\PadIgnitionImpulse.cs'),
+    (Join-Path $src 'Rendering\PadFlowLog.cs')
 ) + @(Get-ChildItem -LiteralPath (Join-Path $src 'Physics') -Filter '*.cs' | ForEach-Object FullName)
 $wanted = @{}
 foreach ($f in $files) {

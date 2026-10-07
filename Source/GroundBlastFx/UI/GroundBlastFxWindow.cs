@@ -1,5 +1,6 @@
 using System;
 using GroundBlastFx.Config;
+using GroundBlastFx.Contracts;
 using KSP.UI.Screens;
 using UnityEngine;
 
@@ -12,10 +13,12 @@ namespace GroundBlastFx.UI
         private ApplicationLauncherButton _button;
         private Texture2D _icon;
         private bool _visible;
+        private readonly Core.GroundBlastFxAddon _addon;
         private Rect _rect;
 
         public GroundBlastFxWindow(Core.GroundBlastFxAddon addon)
         {
+            _addon = addon;
             _rect = new Rect(GeSettings.WindowX, GeSettings.WindowY, 320f, 10f);
             GameEvents.onGUIApplicationLauncherReady.Add(AddButton);
             GameEvents.onGUIApplicationLauncherUnreadifying.Add(OnLauncherUnready);
@@ -89,6 +92,35 @@ namespace GroundBlastFx.UI
             distance = Mathf.Round(distance / 250f) * 250f;
             if (Math.Abs(distance - GeSettings.Renderer.MaxRenderDistanceM) > 1f)
             { GeSettings.Renderer.MaxRenderDistanceM = distance; changed = true; }
+
+            GUILayout.Space(6f);
+            GUILayout.Label(GeStrings.Get("labelBrightness") + " " + (100f * GeSettings.Renderer.EffectBrightness).ToString("0") + " %");
+            float brightness = GUILayout.HorizontalSlider(GeSettings.Renderer.EffectBrightness, VisualTuning.MinBrightness, VisualTuning.MaxBrightness);
+            brightness = VisualTuning.Brightness(Mathf.Round(brightness * 20f) / 20f);
+            if (Math.Abs(brightness - GeSettings.Renderer.EffectBrightness) > 1e-4f)
+            { GeSettings.Renderer.EffectBrightness = brightness; changed = true; }
+            GUILayout.Label(GeStrings.Get("helpBrightness"));
+
+            GUILayout.Space(6f);
+            GUILayout.Label(GeStrings.Get("labelIgnitionStrength") + " " + (100f * GeSettings.Renderer.IgnitionStrength).ToString("0") + " %");
+            float strength = GUILayout.HorizontalSlider(GeSettings.Renderer.IgnitionStrength, VisualTuning.MinIgnitionStrength, VisualTuning.MaxIgnitionStrength);
+            strength = VisualTuning.IgnitionStrength(Mathf.Round(strength * 20f) / 20f);
+            if (Math.Abs(strength - GeSettings.Renderer.IgnitionStrength) > 1e-4f)
+            { GeSettings.Renderer.IgnitionStrength = strength; changed = true; }
+            GUILayout.Label(GeStrings.Get("helpIgnitionStrength"));
+            if (GUILayout.Button(GeStrings.Get("resetVisualSettings")))
+            { GeSettings.ResetVisualTuning(); changed = true; }
+
+            GUILayout.Space(6f);
+            bool scorch = GUILayout.Toggle(GeSettings.Renderer.EnableScorch, GeStrings.Get("toggleScorch"));
+            if (scorch != GeSettings.Renderer.EnableScorch)
+            { GeSettings.Renderer.EnableScorch = scorch; changed = true; }
+            bool keep = GUILayout.Toggle(GeSettings.PersistentMarks, GeStrings.Get("togglePersistentMarks"));
+            if (keep != GeSettings.PersistentMarks)
+            { GeSettings.PersistentMarks = keep; changed = true; }
+            if (_addon != null && GUILayout.Button(GeStrings.Get("clearGroundMarks")))
+                _addon.ClearScorchMarks();
+            GUILayout.Label(GeStrings.Get("helpGroundMarks"));
 
             // La langue suit celle du jeu (réglages de KSP) : pas de choix ici (1.9.2, demande de l'auteur).
 

@@ -151,6 +151,39 @@ float3 CurlNoise(float3 q)
     return curl * (1.0 / 6.0);
 }
 
+// 1.0.2 : vapeur du pas en bouffées. Par emplacement, GE_PUFF_CAP bouffées calculées côté C# (PadPuffs) : centre et
+// rayon (repère de la grille), puis opacité. La densité est l'UNION de leurs sphères douces (max, pas somme : deux
+// bouffées qui se touchent restent deux boules au lieu de se fondre en une masse uniforme).
+#define GE_PUFF_CAP 160
+StructuredBuffer<float4> _GEPuffs;
+
+float PuffDensity(uint k, float3 p)
+{
+    uint b = k * GE_PUFF_CAP * 2;
+    float d = 0;
+    // Bord des bouffées déformé à deux échelles (±15 m sur ~80 m, ±5 m sur ~24 m, lent) : contours en chou-fleur,
+    // pas des sphères parfaites.
+    float3 w1 = _GENoise.SampleLevel(sampler_GENoise, p / 320.0 + float3(0.31, _GETime * 0.002, 0.77), 0).rgb - 0.5;
+    float3 w2 = _GENoise.SampleLevel(sampler_GENoise, p / 96.0 + float3(0.13, _GETime * 0.006, 0.41), 0).rgb - 0.5;
+    p += w1 * 30.0 + w2 * 10.0;
+    [loop] for (uint i = 0; i < GE_PUFF_CAP; i++)
+    {
+        float4 q = _GEPuffs[b + 2 * i];
+        if (q.w <= 0.0) continue;
+        float3 r = p - q.xyz;
+        // Base aplatie et prolongée jusqu'au sol (moitié inférieure étirée ×2) : la bouffée reste posée, même quand elle
+        // s'estompe (le bas, moins dense, disparaissait en premier : le nuage semblait flotter).
+        float4 qa = _GEPuffs[b + 2 * i + 1];   // x = opacité, y = étirement vertical (gros lanceurs : tours)
+        r.y *= r.y < 0.0 ? 0.5 : 1.0 / max(qa.y, 1.0);
+        float dd = dot(r, r);
+        if (dd >= q.w * q.w) continue;
+        float u = sqrt(dd) / q.w;
+        // Cœur plein et bord net : un bord flou étalait de grandes zones de vapeur diluée, rendues en filaments.
+        d = max(d, qa.x * (1.0 - smoothstep(0.6, 1.0, u)));
+    }
+    return d;
+}
+
 [numthreads(4,4,4)]
 void Simulate(uint3 id : SV_DispatchThreadID)
 {
@@ -165,6 +198,8 @@ void Simulate(uint3 id : SV_DispatchThreadID)
     if (_GESimFlags[k].x > 0.5) { _OutDensity[id] = 0; return; }
     // Sous le terrain (butte, bâtiment, flanc du pas) : pas de fumée, l'écoulement passe autour (1.7).
     if (p.y < GEGroundHeight(k, p.xz) - 0.5) { _OutDensity[id] = 0; return; }
+    // Pas de tir à déflecteur : densité des bouffées (méthode lagrangienne), pas de transport de la grille.
+    if (_GESimFlags[k].z > 0.5) { _OutDensity[id] = PuffDensity(k, p); return; }
 
     float dt = _DeltaTime;
     float4 src = _GESrc[k], jet = _GEJet[k], fl = _GEFlowP[k], misc = _GEMisc[k];

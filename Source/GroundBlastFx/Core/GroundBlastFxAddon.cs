@@ -95,7 +95,7 @@ namespace GroundBlastFx.Core
                 _stockFx.Apply();
                 _window = new GroundBlastFxWindow(this);
                 _overlay = new DebugOverlay(this);
-                GeLog.Info("Scène de vol : GroundBlastFx actif (renderer " + _renderer.BackendName + ", qualité " + GeSettings.Renderer.Quality + ")");
+                GeLog.Info("Scène de vol : Volumetric Ground FX (VGFX) actif (renderer " + _renderer.BackendName + ", qualité " + GeSettings.Renderer.Quality + ")");
             }
             catch (Exception e)
             {
@@ -125,6 +125,7 @@ namespace GroundBlastFx.Core
                 r = new NullRenderer();
             }
             _renderer = r;
+            _stockFx.SetReplacementRenderer(r);
             string info;
             try { info = r.GetDebugInfo(); } catch (Exception) { info = "(GetDebugInfo a échoué)"; }
             GeSession.LogBackend(r.BackendName, info);
@@ -143,6 +144,7 @@ namespace GroundBlastFx.Core
             _rendererError = reason;
             SafeShutdown(_renderer);
             _renderer = new NullRenderer();
+            _stockFx.SetReplacementRenderer(_renderer);
         }
 
         private void OnSettingsChanged()
@@ -272,7 +274,12 @@ namespace GroundBlastFx.Core
             _tracker.ClearDemo();
         }
 
-        public void ClearScorchMarks() { _scorch.Clear(); }
+        public void ClearScorchMarks()
+        {
+            _scorch.Clear();
+            _markCount = 0;
+            for (int i = 0; i < _tracker.Capacity; i++) _tracker[i].ScorchSlot = -1;
+        }
 
         // --- Événements ---
 
@@ -321,7 +328,7 @@ namespace GroundBlastFx.Core
             _engines.Clear();
             _classifier.Clear();
             if (GeLog.RepeatedErrorCount > 0) GeLog.Info("Erreurs répétées pendant ce vol : " + GeLog.RepeatedErrorsSummary());
-            GeLog.Info("Scène de vol quittée : GroundBlastFx nettoyé (" + _ticks + " sondages, coût moyen " + _perf.AverageMs.ToString("0.000") + " ms/frame).");
+            GeLog.Info("Scène de vol quittée : Volumetric Ground FX (VGFX) nettoyé (" + _ticks + " sondages, coût moyen " + _perf.AverageMs.ToString("0.000") + " ms/frame).");
             if (Instance == this) Instance = null;
         }
     }

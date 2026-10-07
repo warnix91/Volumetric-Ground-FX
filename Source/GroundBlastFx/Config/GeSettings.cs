@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using GroundBlastFx.Contracts;
 using GroundBlastFx.Core;
@@ -62,6 +62,8 @@ namespace GroundBlastFx.Config
             Renderer.EnableVacuumEjecta = CfgParse.Bool(s, "enableVacuumEjecta", Renderer.EnableVacuumEjecta);
             Renderer.EnableScorch = CfgParse.Bool(s, "enableScorch", Renderer.EnableScorch);
             Renderer.EnableFlameGroundLight = CfgParse.Bool(s, "enableFlameGroundLight", Renderer.EnableFlameGroundLight);
+            Renderer.EffectBrightness = VisualTuning.Brightness(CfgParse.Float(s, "effectBrightness", VisualTuning.DefaultBrightness));
+            Renderer.IgnitionStrength = VisualTuning.IgnitionStrength(CfgParse.Float(s, "ignitionStrength", VisualTuning.DefaultIgnitionStrength));
             Renderer.GlobalIntensity = Mathf.Clamp(CfgParse.Float(s, "globalIntensity", Renderer.GlobalIntensity), 0.25f, 2f);
             Renderer.MaxRenderDistanceM = Mathf.Clamp(CfgParse.Float(s, "maxRenderDistanceM", Renderer.MaxRenderDistanceM), 500f, 20000f);
             Renderer.MaxRenderedClusters = Mathf.Clamp(CfgParse.Int(s, "maxRenderedClusters", Renderer.MaxRenderedClusters), 1, 16);
@@ -88,6 +90,8 @@ namespace GroundBlastFx.Config
                 s.AddValue("enableVacuumEjecta", Renderer.EnableVacuumEjecta);
                 s.AddValue("enableScorch", Renderer.EnableScorch);
                 s.AddValue("enableFlameGroundLight", Renderer.EnableFlameGroundLight);
+                s.AddValue("effectBrightness", CfgParse.Format(VisualTuning.Brightness(Renderer.EffectBrightness)));
+                s.AddValue("ignitionStrength", CfgParse.Format(VisualTuning.IgnitionStrength(Renderer.IgnitionStrength)));
                 s.AddValue("globalIntensity", CfgParse.Format(Renderer.GlobalIntensity));
                 s.AddValue("maxRenderDistanceM", CfgParse.Format(Renderer.MaxRenderDistanceM));
                 s.AddValue("maxRenderedClusters", Renderer.MaxRenderedClusters);
@@ -116,11 +120,19 @@ namespace GroundBlastFx.Config
             catch (Exception e) { GeLog.ExceptionOnce("GeSettings.Changed", e); }
         }
 
+        /// <summary>Réinitialise seulement les deux nouveaux réglages, en gardant les préférences existantes.</summary>
+        public static void ResetVisualTuning()
+        {
+            Renderer.EffectBrightness = VisualTuning.DefaultBrightness;
+            Renderer.IgnitionStrength = VisualTuning.DefaultIgnitionStrength;
+        }
+
         public static string Dump()
         {
             return "qualité=" + Renderer.Quality + ", poussière=" + Renderer.EnableDust + ", vapeur=" + Renderer.EnablePadSteam
                    + ", eau=" + Renderer.EnableWater + ", vide=" + Renderer.EnableVacuumEjecta + ", traces=" + Renderer.EnableScorch
                    + ", lumière=" + Renderer.EnableFlameGroundLight + ", intensité=" + CfgParse.Format(Renderer.GlobalIntensity)
+                   + ", luminosité=" + CfgParse.Format(Renderer.EffectBrightness) + ", souffle=" + CfgParse.Format(Renderer.IgnitionStrength)
                    + ", distance max=" + CfgParse.Format(Renderer.MaxRenderDistanceM) + " m, foyers max=" + Renderer.MaxRenderedClusters
                    + ", masquer poussière stock=" + HideStockSurfaceFx + ", traces gardées=" + PersistentMarks + ", overlay=" + ShowOverlay;
         }

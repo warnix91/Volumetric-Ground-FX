@@ -47,6 +47,9 @@ public static class RenderHarness
         public float PressurePa = -1f, Gravity = -1f; // atmosphère et gravité imposées (Duna)
         public Vector3 HillPos; public float HillRadius, HillHeight; // butte dans le décor (test du relief)
         public float CameraAzimuthDeg = float.NaN, CameraDistM, CameraHeightM; // cadrage imposé (sinon automatique)
+        public bool CompactPad; // banc : terrain 5 m devant la bouche, comme le pad mesuré en jeu
+        public float IgnitionStepAtS = -1f, IgnitionBeforeMN, IgnitionAfterMN, IgnitionRampS;
+        public bool MouthPad; // banc seulement : sorties couvertes, ouverture haute de 4,4 m
     }
 
     private static int Width = 960, Height = 540;
@@ -59,10 +62,17 @@ public static class RenderHarness
         string root = Path.GetFullPath(Path.Combine(Application.dataPath, "..", ".."));
         bool monitor = Width >= 1920;
         string outRoot = Path.Combine(root, "Tools", "render-tests", monitor ? "out-monitor" : "out");
+        string outputOverride = Environment.GetEnvironmentVariable("GE_RENDER_OUTPUT");
+        if (!string.IsNullOrEmpty(outputOverride)) outRoot = Path.GetFullPath(outputOverride);
         Directory.CreateDirectory(outRoot);
-        AssetBundle bundle = AssetBundle.LoadFromFile(Path.Combine(root, "GameData", "GroundBlastFx", "Shaders", "GroundBlastFx.unity3d"));
+        // Diagnostic : comparer un bundle sauvegardé au courant, avec les mêmes entrées du banc.
+        string bundlePath = Environment.GetEnvironmentVariable("GE_TEST_BUNDLE");
+        if (string.IsNullOrEmpty(bundlePath)) bundlePath = Path.Combine(root, "GameData", "GroundBlastFx", "Shaders", "GroundBlastFx.unity3d");
+        AssetBundle bundle = AssetBundle.LoadFromFile(bundlePath);
         if (bundle == null) throw new Exception("Bundle introuvable");
         RenderCore.ForceAnalytic = Environment.GetEnvironmentVariable("GE_NO_SIM") == "1";
+        // GE_NO_CLOUD_DEPTH=1 : sans la profondeur du nuage opaque (comportement 1.0.1), pour comparer.
+        RenderCore.WriteCloudDepth = Environment.GetEnvironmentVariable("GE_NO_CLOUD_DEPTH") != "1";
         // GE_FIRST_SLOT=1..3 : le foyer du scénario prend un autre emplacement GPU que le 0 (en jeu, un 2ᵉ foyer).
         int firstSlot; RenderCore.FirstSlotForTests = int.TryParse(Environment.GetEnvironmentVariable("GE_FIRST_SLOT"), out firstSlot) ? firstSlot : 0;
         // Carte des hauteurs : rayons contre les colliders de la scène du banc (sol, pas, tour, barge, eau).
@@ -73,6 +83,15 @@ public static class RenderHarness
         string qs = Environment.GetEnvironmentVariable("GE_QUALITY");
         if (!string.IsNullOrEmpty(qs)) q = (QualityLevel)Enum.Parse(typeof(QualityLevel), qs, true);
         var settings = new RendererSettings { Quality = q, MaxRenderedClusters = 4 };
+        float globalIntensity;
+        if (float.TryParse(Environment.GetEnvironmentVariable("GE_INTENSITY"), System.Globalization.NumberStyles.Float,
+                           System.Globalization.CultureInfo.InvariantCulture, out globalIntensity))
+            settings.GlobalIntensity = Mathf.Clamp(globalIntensity, 0.25f, 2f);
+        float visualGain;
+        if (float.TryParse(Environment.GetEnvironmentVariable("GE_EFFECT_BRIGHTNESS"), System.Globalization.NumberStyles.Float,
+                          System.Globalization.CultureInfo.InvariantCulture, out visualGain)) settings.EffectBrightness = VisualTuning.Brightness(visualGain);
+        if (float.TryParse(Environment.GetEnvironmentVariable("GE_IGNITION_STRENGTH"), System.Globalization.NumberStyles.Float,
+                          System.Globalization.CultureInfo.InvariantCulture, out visualGain)) settings.IgnitionStrength = VisualTuning.IgnitionStrength(visualGain);
         core.Configure(settings);
         float dbg; Shader.SetGlobalFloat("_GEDebugMode", float.TryParse(Environment.GetEnvironmentVariable("GE_DEBUG_MODE"), out dbg) ? dbg : 0f);
 
@@ -91,14 +110,25 @@ public static class RenderHarness
                 string frames = Environment.GetEnvironmentVariable("GE_FRAMES");
                 if (!string.IsNullOrEmpty(frames))
                     s.Frames = Array.ConvertAll(frames.Split(';'), v => float.Parse(v, System.Globalization.CultureInfo.InvariantCulture));
+                // GE_SUN_ELEV=-12 : hauteur du soleil imposée (degrés), par exemple un décollage du pas de nuit.
+                float sunElev;
+                if (float.TryParse(Environment.GetEnvironmentVariable("GE_SUN_ELEV"), System.Globalization.NumberStyles.Float,
+                                   System.Globalization.CultureInfo.InvariantCulture, out sunElev))
+                    s.SunElevationDeg = sunElev;
                 string dir = Path.Combine(outRoot, s.Id);
                 Directory.CreateDirectory(dir);
                 if (File.Exists(Path.Combine(dir, "frames.txt"))) File.Delete(Path.Combine(dir, "frames.txt"));
                 foreach (string old in Directory.GetFiles(dir, "t*.png")) File.Delete(old); // images générées par un passage précédent
+                // Isoler aussi l'état aléatoire des bouffées entre scénarios : Clear() ne rembobine pas leur RNG.
+                // Sinon une impulsion dans S26 changeait les bouffées de S28, pourtant témoin sans impulsion.
+                core.Dispose();
+                core = new RenderCore(bundle);
+                if (!core.IsAvailable) throw new Exception("RenderCore indisponible : " + core.Status);
+                core.Configure(settings);
                 double ms = RunScene(s, core, settings, world, dir);
                 timing.AppendLine("| " + s.Id + " | " + s.Title + " | " + ms.ToString("F2") + " |");
             }
-            File.WriteAllText(Path.Combine(root, "Tools", "render-tests", monitor ? "timing-monitor.md" : "timing.md"),
+            File.WriteAllText(string.IsNullOrEmpty(outputOverride) ? Path.Combine(root, "Tools", "render-tests", monitor ? "timing-monitor.md" : "timing.md") : Path.Combine(outRoot, "timing.md"),
                 "| Scénario | Titre | Coût GPU estimé du volume (ms/image, " + Width + "×" + Height + ", " + settings.Quality + ") |\n|---|---|---|\n" + timing);
             Debug.Log("[GroundBlastFx] RenderHarness terminé : " + outRoot);
         }
@@ -195,6 +225,42 @@ public static class RenderHarness
             new Scene { Id = "S21", Title = "Atterrissage sur la banquise (neige soufflée : nuage blanc)", Demo = DemoKind.S1Landing, Surface = SurfaceKind.Terrain,
                 SunElevationDeg = 22, SunAzimuthDeg = 150, Frames = new[] { 14f, 19f, 23f, 26f, 29.5f, 45f }, DustA = new Color(0.93f, 0.95f, 0.98f),
                 DustB = new Color(0.80f, 0.85f, 0.92f), Ground = new Color(0.86f, 0.89f, 0.93f), WindMs = 5f, SteamBonus = 0.45f },
+            new Scene { Id = "S22", Title = "Pad réel : raccord bas et coupure à 8 s, vue rasante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 0.3f, 1f, 3f, 7.9f, 8.1f, 8.5f, 9f, 10f, 12f, 20f, 40f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 360f, CameraHeightM = 12f },
+            new Scene { Id = "S23", Title = "Pad réel : mêmes instants, vue plongeante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 0.3f, 1f, 3f, 7.9f, 8.1f, 8.5f, 9f, 10f, 12f, 20f, 40f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 220f, CameraHeightM = 260f },
+            new Scene { Id = "S24", Title = "Bouche couverte : départ de flamme, vue proche", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 0.3f, 1f, 3f, 7.9f, 8.5f, 12f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 55f, CameraDistM = 90f, CameraHeightM = 7f },
+            new Scene { Id = "S25", Title = "Bouche couverte : mêmes instants, vue plongeante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 0.3f, 1f, 3f, 7.9f, 8.5f, 12f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 55f, CameraDistM = 95f, CameraHeightM = 80f },
+            new Scene { Id = "S26", Title = "Allumage boosters après moteurs liquides, vue rasante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 2.9f, 3.0f, 3.1f, 3.2f, 3.4f, 3.8f, 4.3f, 6f, 8.3f, 10f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 360f, CameraHeightM = 12f,
+                IgnitionStepAtS = 3f, IgnitionBeforeMN = 4f, IgnitionAfterMN = 35f, IgnitionRampS = 0f },
+            new Scene { Id = "S27", Title = "Même allumage, vue plongeante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 2.9f, 3.0f, 3.1f, 3.2f, 3.4f, 3.8f, 4.3f, 6f, 8.3f, 10f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 280f, CameraHeightM = 260f,
+                IgnitionStepAtS = 3f, IgnitionBeforeMN = 4f, IgnitionAfterMN = 35f, IgnitionRampS = 0f },
+            new Scene { Id = "S28", Title = "Rampe lente de poussée, témoin sans déflagration", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 2.9f, 3.0f, 3.1f, 3.2f, 3.4f, 3.8f, 4.3f, 6f, 8.3f, 10f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 360f, CameraHeightM = 12f,
+                IgnitionStepAtS = 3f, IgnitionBeforeMN = 4f, IgnitionAfterMN = 35f, IgnitionRampS = 3f },
+            new Scene { Id = "S29", Title = "Premier allumage à froid, vue rasante", Demo = DemoKind.S3PadLaunch, Surface = SurfaceKind.LaunchPad,
+                SunElevationDeg = 72f, SunAzimuthDeg = 115f, Frames = new[] { 2.9f, 3.0f, 3.1f, 3.2f, 3.4f, 3.8f, 4.3f, 6f, 8.3f, 10f }, DustA = concrete, DustB = concreteB,
+                Ground = new Color(0.40f, 0.50f, 0.28f), Pad = true, CompactPad = true, MouthPad = true, TrenchHeadingDeg = 0f, WindMs = 2f, OutletCount = 2, OutletDistM = 12f, PadHeightM = 5f,
+                StandoffM = 10f, CutoffAtS = 8f, CameraAzimuthDeg = 90f, CameraDistM = 360f, CameraHeightM = 12f,
+                IgnitionStepAtS = 3f, IgnitionBeforeMN = 0f, IgnitionAfterMN = 35f, IgnitionRampS = 0f },
         };
     }
 
@@ -220,13 +286,25 @@ public static class RenderHarness
             DemoState st;
             DemoProfiles.Evaluate(Sc, t, out st);
             bool on = st.EnginesOn && (S.CutoffAtS < 0 || t < S.CutoffAtS);
+            float thrustScale = S.ThrustScale;
+            float ignitionAge = t;
+            if (S.IgnitionStepAtS >= 0f)
+            {
+                // Entrées synthétiques : 4 MN de moteurs liquides, puis saut à 35 MN. Ce n'est pas une télémétrie NASA.
+                float fraction = S.IgnitionRampS > 0f ? Mathf.Clamp01((t - S.IgnitionStepAtS) / S.IgnitionRampS) : (t >= S.IgnitionStepAtS ? 1f : 0f);
+                float thrust = Mathf.Lerp(S.IgnitionBeforeMN, S.IgnitionAfterMN, fraction) * 1000000f;
+                on = thrust > 0f && (S.CutoffAtS < 0f || t < S.CutoffAtS);
+                st.Throttle01 = 1f;
+                thrustScale = thrust / (Sc.ThrustPerEngineN * Sc.EngineCount);
+                ignitionAge = S.IgnitionBeforeMN > 0f ? t + 2f : Mathf.Max(t - S.IgnitionStepAtS, 0f);
+            }
             float pAmb = S.Vacuum ? 0f : S.PressurePa > 0f ? S.PressurePa : 101325f * (S.Water ? 1f : 0.9f);
             Standoff = S.StandoffM > 0f ? S.StandoffM : Mathf.Max(st.StandoffM, 0.5f);
             if (on)
             {
-                Thrust = Sc.ThrustPerEngineN * st.Throttle01 * Sc.EngineCount * S.ThrustScale;
+                Thrust = Sc.ThrustPerEngineN * st.Throttle01 * Sc.EngineCount * thrustScale;
                 float ve = PlumeModel.ExhaustVelocity(Sc.IspS);
-                var input = new JetInput { ThrustN = Sc.ThrustPerEngineN * st.Throttle01 * S.ThrustScale, ExhaustVelocityMs = ve, ExitRadiusM = Sc.ExitRadiusM, StandoffM = Standoff, CosAlpha = 1f, AmbientPressurePa = pAmb };
+                var input = new JetInput { ThrustN = Sc.ThrustPerEngineN * st.Throttle01 * thrustScale, ExhaustVelocityMs = ve, ExitRadiusM = Sc.ExitRadiusM, StandoffM = Standoff, CosAlpha = 1f, AmbientPressurePa = pAmb };
                 JetImpingement j;
                 PlumeModel.Evaluate(ref input, P, out j);
                 Envelope = j.ImpingementRadiusM + (Sc.EngineCount > 1 ? Sc.NozzleSpanM - Sc.ExitRadiusM : 0f);
@@ -249,7 +327,7 @@ public static class RenderHarness
                 float steam = S.Vacuum ? 0f : Mathf.Clamp01((k == SurfaceKind.LaunchPad ? 0.9f : k == SurfaceKind.Water ? 0.8f : k == SurfaceKind.VesselDeck ? 0.4f : 0.05f) + S.SteamBonus);
                 float lift = PlumeModel.DustLift(WallJet, thr, erod, P);
                 float steamVis = PlumeModel.SteamVisibility(WallJet, steam, P);
-                float target = Activation * Mathf.Max(lift, steamVis) * CloudFrontModel.IgnitionFade(t, P);
+                float target = Activation * Mathf.Max(lift, steamVis) * CloudFrontModel.IgnitionFade(ignitionAge, P);
                 Source = GeMath.Approach(Source, target, P.IntensitySmoothingS, dt);
                 float tau = target >= Intensity ? P.IntensitySmoothingS : Mathf.Max(CloudFrontModel.DissipationTime(Front, P) / 3f, P.IntensitySmoothingS);
                 if (S.Vacuum) tau = P.IntensitySmoothingS;
@@ -285,7 +363,7 @@ public static class RenderHarness
             // --- Structure du contrat ---
             C.Id = 100 + int.Parse(S.Id.Substring(1)); // un Id par scénario : chaque scène repart d'une grille vide
             C.EnginesActive = Active;
-            C.TimeSinceIgnitionS = t;
+            C.TimeSinceIgnitionS = ignitionAge;
             C.TimeSinceCutoffS = Active || CutoffTime < 0 ? 0f : t - CutoffTime;
             C.IsDemo = true;
             float td = Mathf.Max(t - 2f, 0f);
@@ -326,7 +404,7 @@ public static class RenderHarness
             C.DeflectorOutlet0World = C.TrenchDirectionWorld * S.OutletDistM + Vector3.up * S.PadHeightM;
             C.DeflectorOutlet1World = -C.TrenchDirectionWorld * S.OutletDistM + Vector3.up * S.PadHeightM;
             float padHalf = 3f * Mathf.Max(Sc.NozzleSpanM * 2.6f, 12f);
-            float edge = Mathf.Max(padHalf - S.OutletDistM, 3f);
+            float edge = S.CompactPad ? 5f : Mathf.Max(padHalf - S.OutletDistM, 3f);
             C.DeflectorGround = S.OutletCount > 0 && S.PadHeightM > 0.5f ? new Vector4(S.PadHeightM, edge, S.PadHeightM, edge) : Vector4.zero;
             C.FlameLightColor = S.FlameColor;
             C.FlameLightIntensity = Flame;
@@ -339,6 +417,8 @@ public static class RenderHarness
     private static double RunScene(Scene s, RenderCore core, RendererSettings settings, World world, string dir)
     {
         var sim = new Sim { S = s, Sc = DemoProfiles.Create(s.Demo) };
+        if (s.CompactPad) File.WriteAllText(Path.Combine(dir, "pad-state.csv"), "time,jetLength,jetFeed,cutFront,exitSpeed,puffCount,maxPuffRadius,puffDataSha256\n");
+        if (s.IgnitionStepAtS >= 0f) File.WriteAllText(Path.Combine(dir, "ignition.csv"), "time,thrustN,pulse,exitSpeed,halfWidth,jetLength,jetFeed,cutFront,puffCount,maxPuffRadius,channel,source,meanPuffSpeed,maxPuffSpeed,maxPuffTop\n");
         world.Setup(s, sim.Sc);
         Camera cam = world.Camera;
         var cmd = new CommandBuffer { name = "GroundBlastFx harnais" };
@@ -369,6 +449,7 @@ public static class RenderHarness
                     RenderEnvironment env = world.Environment(s, t, dt);
                     int count = sim.C.Visibility01 > 0.001f || sim.Active ? 1 : 0;
                     core.Prepare(cam, clusters, count, marks, markCount, settings, ref env);
+                    if (s.IgnitionStepAtS >= 0f) WriteIgnitionState(core, sim.C, t, dir);
                     lastCount = count; lastMarkCount = markCount;
                     t += dt;
                 }
@@ -376,15 +457,20 @@ public static class RenderHarness
                 // La caméra vient d'être placée : on recalcule les rayons et uniformes pour cette position (sans avancer le temps).
                 RenderEnvironment envNow = world.Environment(s, t, 0f);
                 core.Prepare(cam, clusters, lastCount, marks, lastMarkCount, settings, ref envNow);
+                if (s.CompactPad) WritePadState(core, t, dir);
                 File.AppendAllText(Path.Combine(dir, "frames.txt"), string.Format(System.Globalization.CultureInfo.InvariantCulture,
                     "t={0:F1} actif={1} h={2:F1} I={3:F2} R={4:F1}/{5:F1} r_i={6:F1} act={7:F2} u_i={8:F0} F={9:F0}kN flamme={10:F2} dose={11:F2}\n",
                     t, sim.Active, sim.Standoff, sim.Intensity, sim.Front, sim.MaxCloud, sim.Envelope, sim.Activation, sim.WallJet, sim.Thrust / 1000f, sim.Flame, sim.Dose));
                 core.Record(cmd, Width, Height, Div(settings));
                 world.Rocket(s, sim);
-                gpuMs += world.MeasureVolumeCost(cmd, core, Width, Height, Div(settings));
-                File.AppendAllText(Path.Combine(dir, "frames.txt"), string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                    "   dont simulation GPU (compute) : {0:F2} ms\n", world.LastSimMs));
-                gpuSamples++;
+                // Les séries de chronométrage avancent le champ GPU : les exclure des captures de diagnostic temporel.
+                if (Environment.GetEnvironmentVariable("GE_CAPTURE_ONLY") != "1")
+                {
+                    gpuMs += world.MeasureVolumeCost(cmd, core, Width, Height, Div(settings));
+                    File.AppendAllText(Path.Combine(dir, "frames.txt"), string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "   dont simulation GPU (compute) : {0:F2} ms\n", world.LastSimMs));
+                    gpuSamples++;
+                }
                 core.Record(cmd, Width, Height, 2);
                 if (frame == s.Frames[0]) world.Capture(null); // première image jetée : ciel et ambiant pas encore stables
                 world.Capture(Path.Combine(dir, "t" + frame.ToString("000.0").Replace('.', '_').Replace(',', '_') + ".png"));
@@ -396,6 +482,66 @@ public static class RenderHarness
             cmd.Release();
         }
         return gpuSamples > 0 ? gpuMs / gpuSamples : 0;
+    }
+
+    // Diagnostic du banc seulement : identité des bouffées reçues par le GPU et trajet de la coupure.
+    // La réflexion évite d'ajouter une API de test à la DLL du jeu.
+    private static void WriteIgnitionState(RenderCore core, ImpingementCluster cluster, float t, string dir)
+    {
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        int s = RenderCore.FirstSlotForTests;
+        Vector4 fx = ((Vector4[])typeof(RenderCore).GetField("_flowX", flags).GetValue(core))[s];
+        Vector4 jx = ((Vector4[])typeof(RenderCore).GetField("_jetX", flags).GetValue(core))[s];
+        Vector4[] puffs = (Vector4[])typeof(RenderCore).GetField("_puffData", flags).GetValue(core);
+        int count = 0; float radius = 0f;
+        for (int i = s * 320; i < (s + 1) * 320; i += 2)
+            if (puffs[i].w > 0f) { count++; radius = Mathf.Max(radius, puffs[i].w); }
+        PadPuffs model = ((PadPuffs[])typeof(RenderCore).GetField("_puffs", flags).GetValue(core))[s];
+        int alive = 0; float speedSum = 0f, speedMax = 0f, top = 0f;
+        if (model != null) foreach (PadPuffs.Puff q in model.Items)
+        {
+            if (!q.Alive) continue;
+            float speed = Mathf.Sqrt(q.Vx * q.Vx + q.Vz * q.Vz);
+            alive++; speedSum += speed; speedMax = Mathf.Max(speedMax, speed);
+            top = Mathf.Max(top, q.Y + q.Radius * q.Tall);
+        }
+        var field = typeof(RenderCore).GetField("_thrustPulse", flags);
+        float pulse = 0f;
+        if (field != null)
+        {
+            object item = ((Array)field.GetValue(core)).GetValue(s);
+            pulse = (float)item.GetType().GetProperty("Value").GetValue(item, null);
+        }
+        File.AppendAllText(Path.Combine(dir, "ignition.csv"), string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "{0:F4},{1:F2},{2:F5},{3:F4},{4:F4},{5:F4},{6:F4},{7:F4},{8},{9:F4},{10:F4},{11:F4},{12:F4},{13:F4},{14:F4}\n",
+            t, cluster.TotalThrustN, pulse, fx.y, fx.z, jx.x, jx.y, jx.w, count, radius, fx.x, cluster.Source01, alive > 0 ? speedSum / alive : 0f, speedMax, top));
+    }
+
+    private static void WritePadState(RenderCore core, float t, string dir)
+    {
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        Vector4[] puffs = (Vector4[])typeof(RenderCore).GetField("_puffData", flags).GetValue(core);
+        Vector4[] jets = (Vector4[])typeof(RenderCore).GetField("_jetX", flags).GetValue(core);
+        Vector4[] flows = (Vector4[])typeof(RenderCore).GetField("_flowX", flags).GetValue(core);
+        int slot = RenderCore.FirstSlotForTests;
+        int count = 0; float radius = 0f;
+        string hash;
+        using (var bytes = new MemoryStream())
+        {
+            using (var writer = new BinaryWriter(bytes, Encoding.UTF8, true))
+                for (int i = slot * 320; i < (slot + 1) * 320; i++)
+                {
+                    Vector4 p = puffs[i]; writer.Write(p.x); writer.Write(p.y); writer.Write(p.z); writer.Write(p.w);
+                    if ((i & 1) == 0 && p.w > 0f) { count++; radius = Mathf.Max(radius, p.w); }
+                }
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                hash = BitConverter.ToString(sha.ComputeHash(bytes.ToArray())).Replace("-", "");
+        }
+        var motionField = typeof(RenderCore).GetField("_jetMotion", flags);
+        float speed = motionField != null ? ((Vector4[])motionField.GetValue(core))[slot].x : flows[slot].y;
+        Vector4 j = jets[slot];
+        File.AppendAllText(Path.Combine(dir, "pad-state.csv"), string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "{0:F3},{1:F4},{2:F4},{3:F4},{4:F4},{5},{6:F4},{7}\n", t, j.x, j.y, j.w, speed, count, radius, hash));
     }
 
     // ------------------------------------------------------------------------------------------------
@@ -416,7 +562,7 @@ public static class RenderHarness
     private sealed class World : IDisposable
     {
         public Camera Camera;
-        private readonly GameObject _camGo, _sunGo, _flameGo, _ground, _rocket, _water, _barge, _tower, _pad, _hill;
+        private readonly GameObject _camGo, _sunGo, _flameGo, _ground, _rocket, _water, _barge, _tower, _pad, _hill, _mouthPad;
         private readonly Light _sun, _flame;
         private readonly Material _groundMat, _rocketMat, _waterMat, _bargeMat, _padMat, _sky;
         private readonly Texture2D _groundTex, _pixels;
@@ -436,6 +582,31 @@ public static class RenderHarness
             _target.Create();
             Camera.targetTexture = _target;
             _pixels = new Texture2D(Width, Height, TextureFormat.RGB24, false);
+            // GE_TEST_SKYWALL=1 (1.0.2) : mur rouge lointain dessiné APRÈS nos nuages (file transparente 2998), comme le ciel
+            // de Scatterer : là où le nuage n'écrit pas sa profondeur, le mur passe devant lui.
+            // GE_TEST_LATESMOKE=1 (1.0.2) : fumée d'un autre mod dessinée après nos nuages et calée sur _CameraDepthTexture
+            // (bandeau bleu à GE_TEST_WALL_DEPTH mètres, 300 par défaut) : notre nuage doit la cacher quand elle est derrière.
+            if (System.Environment.GetEnvironmentVariable("GE_TEST_LATESMOKE") == "1")
+            {
+                var smokeMat = new Material(Shader.Find("Hidden/GE TestLateSmoke"));
+                float wallDepth;
+                smokeMat.SetFloat("_GETestWallDepth", float.TryParse(System.Environment.GetEnvironmentVariable("GE_TEST_WALL_DEPTH"),
+                    System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out wallDepth) ? wallDepth : 300f);
+                var late = new CommandBuffer { name = "GE test : fumée d'un autre mod" };
+                late.Blit(Texture2D.blackTexture, BuiltinRenderTextureType.CameraTarget, smokeMat);
+                Camera.AddCommandBuffer(CameraEvent.AfterForwardAlpha, late);
+            }
+            if (System.Environment.GetEnvironmentVariable("GE_TEST_SKYWALL") == "1")
+            {
+                var wall = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                UnityEngine.Object.DestroyImmediate(wall.GetComponent<Collider>());
+                wall.name = "GE test : ciel dessiné après nous";
+                wall.transform.SetParent(_camGo.transform, false);
+                wall.transform.localPosition = new Vector3(0f, 0f, 15000f);
+                wall.transform.localScale = new Vector3(40000f, 20000f, 1f);
+                var wallMat = new Material(Shader.Find("Unlit/Color")) { color = new Color(0.9f, 0.1f, 0.1f), renderQueue = 2998 };
+                wall.GetComponent<MeshRenderer>().sharedMaterial = wallMat;
+            }
 
             _sunGo = new GameObject("GE sun");
             _sun = _sunGo.AddComponent<Light>();
@@ -482,6 +653,15 @@ public static class RenderHarness
             _pad.GetComponent<Renderer>().sharedMaterial = _padMat;
             _pad.transform.localScale = new Vector3(70, 2, 70);
             _pad.transform.position = new Vector3(0, -0.9f, 0);
+            // Deux ouvertures synthétiques : largeur 14 m et hauteur 4,4 m, toit à 5 m.
+            // Hauteur/distance inspirées du log KSP ; largeur supposée, ce ne sont pas les meshes KSP.
+            _mouthPad = new GameObject("GE bouches du banc");
+            for (int side = -1; side <= 1; side += 2)
+            {
+                MouthBlock(new Vector3(0f, 4.7f, side * 14.5f), new Vector3(16f, 0.6f, 5f));
+                MouthBlock(new Vector3(-7.5f, 2.2f, side * 14.5f), new Vector3(1f, 4.4f, 5f));
+                MouthBlock(new Vector3(7.5f, 2.2f, side * 14.5f), new Vector3(1f, 4.4f, 5f));
+            }
             _hill = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             _hill.GetComponent<Renderer>().sharedMaterial = _groundMat;
             _tower = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -496,6 +676,7 @@ public static class RenderHarness
             _pad.SetActive(s.Pad);
             _tower.SetActive(s.Pad);
             _hill.SetActive(s.HillHeight > 0f);
+            _mouthPad.SetActive(s.MouthPad);
             if (s.HillHeight > 0f)
             {
                 _hill.transform.localScale = new Vector3(2f * s.HillRadius, 2f * s.HillHeight, 2f * s.HillRadius);
@@ -506,7 +687,12 @@ public static class RenderHarness
             if (s.Pad)
             {
                 float span = Mathf.Max(sc.NozzleSpanM * 2.6f, 12f);
-                _pad.transform.localScale = new Vector3(span * 6f, 2f + s.PadHeightM, span * 6f);
+                _pad.transform.localScale = s.MouthPad
+                    ? new Vector3(16f, 2f + s.PadHeightM, 2f * s.OutletDistM)
+                    : s.CompactPad
+                    ? new Vector3(16f, 2f + s.PadHeightM, 2f * s.OutletDistM + 10f)
+                    : new Vector3(span * 6f, 2f + s.PadHeightM, span * 6f);
+                _pad.transform.rotation = Quaternion.Euler(0f, s.CompactPad ? s.TrenchHeadingDeg : 0f, 0f);
                 _pad.transform.position = new Vector3(0, s.PadHeightM + 0.1f - 0.5f * (2f + s.PadHeightM), 0);
                 _tower.transform.localScale = new Vector3(8, span * 12f, 8);
                 float camAz = (s.SunAzimuthDeg + 200f) * Mathf.Deg2Rad + Mathf.PI + 0.5f; // derrière le lanceur vu de la caméra
@@ -524,6 +710,15 @@ public static class RenderHarness
             RenderSettings.ambientIntensity = s.SunElevationDeg < 0 ? 0.08f : 1f;
             DynamicGI.UpdateEnvironment();
             for (int w = 0; w < 40; w++) { Camera.Render(); DynamicGI.UpdateEnvironment(); } // chauffe : l'éclairage ambiant du ciel est prêt pour la première capture
+        }
+
+        private void MouthBlock(Vector3 position, Vector3 size)
+        {
+            GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            part.transform.SetParent(_mouthPad.transform, false);
+            part.transform.localPosition = position;
+            part.transform.localScale = size;
+            part.GetComponent<Renderer>().sharedMaterial = _padMat;
         }
 
         public RenderEnvironment Environment(Scene s, float t, float dt)
@@ -669,7 +864,7 @@ public static class RenderHarness
             _target.Release();
             UnityEngine.Object.DestroyImmediate(_target);
             UnityEngine.Object.DestroyImmediate(_pixels);
-            foreach (var go in new[] { _camGo, _sunGo, _flameGo, _ground, _rocket, _water, _barge, _tower, _pad, _hill }) UnityEngine.Object.DestroyImmediate(go);
+            foreach (var go in new[] { _camGo, _sunGo, _flameGo, _ground, _rocket, _water, _barge, _tower, _pad, _hill, _mouthPad }) UnityEngine.Object.DestroyImmediate(go);
             foreach (var m in new[] { _groundMat, _rocketMat, _waterMat, _bargeMat, _padMat, _sky }) UnityEngine.Object.DestroyImmediate(m);
             UnityEngine.Object.DestroyImmediate(_groundTex);
         }

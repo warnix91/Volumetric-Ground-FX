@@ -233,32 +233,7 @@ namespace GroundBlastFx.Core
         private static float EstimateDiameter(Part part, ModuleEngines m)
         {
             Transform axis = m.thrustTransforms != null && m.thrustTransforms.Count > 0 && m.thrustTransforms[0] != null ? m.thrustTransforms[0] : part.transform;
-            List<Renderer> renderers = part.FindModelComponents<Renderer>();
-            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
-            bool any = false;
-            if (renderers != null)
-            {
-                for (int i = 0; i < renderers.Count; i++)
-                {
-                    Renderer r = renderers[i];
-                    if (r == null || r is ParticleSystemRenderer || !r.enabled) continue;
-                    Bounds b = r.bounds;
-                    Vector3 c = b.center, e = b.extents;
-                    for (int k = 0; k < 8; k++)
-                    {
-                        Vector3 corner = new Vector3(c.x + ((k & 1) == 0 ? -e.x : e.x), c.y + ((k & 2) == 0 ? -e.y : e.y), c.z + ((k & 4) == 0 ? -e.z : e.z));
-                        Vector3 l = axis.InverseTransformPoint(corner);
-                        if (l.x < minX) minX = l.x;
-                        if (l.x > maxX) maxX = l.x;
-                        if (l.y < minY) minY = l.y;
-                        if (l.y > maxY) maxY = l.y;
-                        any = true;
-                    }
-                }
-            }
-            if (!any) return 1.25f;
-            // Les bounds monde d'un renderer tourné sont gonflées : on garde la plus petite étendue et un facteur 0,85.
-            return 0.85f * Mathf.Min(maxX - minX, maxY - minY);
+            return NozzleGeometry.EstimateDiameter(part.FindModelComponents<Renderer>(), axis);
         }
 
         /// <summary>Premier motif de Propellants.cfg (dans l'ordre du fichier) qui correspond à un ergol du moteur.</summary>

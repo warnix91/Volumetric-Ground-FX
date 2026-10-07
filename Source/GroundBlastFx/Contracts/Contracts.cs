@@ -120,6 +120,10 @@ namespace GroundBlastFx.Contracts
         public float MaxRenderDistanceM = 5000f;
         public int MaxRenderedClusters = 4;
         public bool DebugView = false;
+
+        // gains visuels uniquement ; indépendants de la densité et de la physique du vaisseau.
+        public float EffectBrightness = VisualTuning.DefaultBrightness;
+        public float IgnitionStrength = VisualTuning.DefaultIgnitionStrength;
     }
 
     public interface IGroundBlastFxRenderer

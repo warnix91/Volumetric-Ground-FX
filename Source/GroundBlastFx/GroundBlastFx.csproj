@@ -12,12 +12,15 @@
     <LangVersion>9.0</LangVersion>
     <Nullable>disable</Nullable>
     <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/VGFX/Source/GroundBlastFx</PathMap>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <WarningLevel>4</WarningLevel>
 
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
-    <Product>GroundBlastFx</Product>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>Volumetric Ground FX (VGFX)</Product>
+    <AssemblyTitle>Volumetric Ground FX (VGFX)</AssemblyTitle>
     <Company>GroundBlastFx</Company>
     <Copyright>MIT</Copyright>
 
@@ -36,6 +39,10 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <DebugType>portable</DebugType>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <Compile Remove="Core/DevAutomation.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="$(KSPManaged)\mscorlib.dll" Private="false" />

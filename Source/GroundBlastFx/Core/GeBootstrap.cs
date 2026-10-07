@@ -14,7 +14,7 @@ namespace GroundBlastFx.Core
         {
             DontDestroyOnLoad(this);
             GeLog.Init();
-            GeLog.Info("GroundBlastFx " + GeSession.ModVersion + " chargé.");
+            GeLog.Info("Volumetric Ground FX (VGFX) " + GeSession.ModVersion + " chargé.");
         }
     }
 
@@ -61,7 +61,7 @@ namespace GroundBlastFx.Core
             _headerWritten = true;
             var sb = new StringBuilder();
             sb.AppendLine("===== En-tête de session =====");
-            sb.AppendLine("Mod : GroundBlastFx " + ModVersion);
+            sb.AppendLine("Mod : Volumetric Ground FX (VGFX) " + ModVersion);
             sb.AppendLine("KSP : " + Versioning.GetVersionString() + " — Unity " + Application.unityVersion);
             sb.AppendLine("GPU : " + SystemInfo.graphicsDeviceName + " (" + SystemInfo.graphicsDeviceVendor + "), " + SystemInfo.graphicsMemorySize + " Mo, API " + SystemInfo.graphicsDeviceType + " " + SystemInfo.graphicsDeviceVersion);
             sb.AppendLine("Compute shaders : " + (SystemInfo.supportsComputeShaders ? "oui" : "non") + ", textures 3D : " + (SystemInfo.supports3DTextures ? "oui" : "non") + ", shader level " + SystemInfo.graphicsShaderLevel);
@@ -72,7 +72,7 @@ namespace GroundBlastFx.Core
             sb.AppendLine("Physique : " + GeConfig.DumpPhysics());
             sb.Append("==============================");
             GeLog.FileOnly(sb.ToString());
-            GeLog.Info("GroundBlastFx " + ModVersion + " prêt — " + SystemInfo.graphicsDeviceName + ", compute " + (SystemInfo.supportsComputeShaders ? "oui" : "non") + ", qualité " + GeSettings.Renderer.Quality);
+            GeLog.Info("Volumetric Ground FX (VGFX) " + ModVersion + " prêt — " + SystemInfo.graphicsDeviceName + ", compute " + (SystemInfo.supportsComputeShaders ? "oui" : "non") + ", qualité " + GeSettings.Renderer.Quality);
         }
 
         /// <summary>Complète l'en-tête avec le backend réellement choisi (premier vol de la session).</summary>

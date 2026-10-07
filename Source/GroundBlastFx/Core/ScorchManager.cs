@@ -85,7 +85,7 @@ namespace GroundBlastFx.Core
             if (body == null) return;
             PhysicsParams p = GeConfig.Physics;
             int max = Mathf.Clamp(p.ScorchMaxMarks, 1, Capacity);
-            for (int i = 0; i < tracker.Capacity; i++)
+            for (int i = 0; GeSettings.Renderer.EnableScorch && i < tracker.Capacity; i++)
             {
                 ClusterState s = tracker[i];
                 if (!s.InUse || !s.EnginesActive || s.Body != body) continue;
@@ -203,7 +203,10 @@ namespace GroundBlastFx.Core
 
         public static void SaveTo(ConfigNode node)
         {
-            if (node == null || !GeSettings.PersistentMarks) return;
+            if (node == null) return;
+            node.RemoveNodes("MARK");
+            node.RemoveValues("markCount");
+            if (!GeSettings.PersistentMarks) return;
             float min = GeConfig.Physics.ScorchMinStrength;
             int saved = 0;
             for (int i = 0; i < Capacity; i++)
@@ -230,9 +233,10 @@ namespace GroundBlastFx.Core
 
         public static void LoadFrom(ConfigNode node)
         {
-            if (node == null || !GeSettings.PersistentMarks) return;
-            // L'état sauvegardé fait foi : on remplace toutes les traces au sol (pas celles des ponts, purgées au vol).
-            for (int i = 0; i < Capacity; i++) if (Marks[i].InUse && !Marks[i].OnDeck) Marks[i].InUse = false;
+            if (node == null) return;
+            // Une autre partie ou un quickload remplace l'état, même quand la persistance est désactivée.
+            for (int i = 0; i < Capacity; i++) Marks[i].InUse = false;
+            if (!GeSettings.PersistentMarks) return;
             int max = Mathf.Clamp(GeConfig.Physics.ScorchMaxMarks, 1, Capacity);
             int loaded = 0;
             foreach (ConfigNode n in node.GetNodes("MARK"))
