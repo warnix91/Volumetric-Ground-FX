@@ -29,7 +29,7 @@ Formerly **GroundBlastFx**. The installation folder stays the same.
 2. Extract the release ZIP and copy `GroundBlastFx` into `GameData`.
 3. Launch KSP. The VGFX toolbar button opens the settings in flight.
 
-[GitHub releases](https://github.com/warnix91/GroundBlastFx/releases) · [SpaceDock](https://spacedock.info/mod/4615/GroundBlastFx)
+[GitHub releases](https://github.com/warnix91/Volumetric-Ground-FX/releases) · [SpaceDock](https://spacedock.info/mod/4615/GroundBlastFx)
 
 No other mods are required. When updating, keep
 `GroundBlastFx/PluginData/Settings.cfg` and `LaunchSites_user.cfg`, if present,
@@ -84,7 +84,7 @@ separate validation.
 For a bug report, include your KSP and VGFX versions, visual mods, a screenshot
 and the relevant logs. Remove personal information from logs before sharing.
 
-[Player documentation](GameData/GroundBlastFx/README.md) · [Report a bug](https://github.com/warnix91/GroundBlastFx/issues)
+[Player documentation](GameData/GroundBlastFx/README.md) · [Report a bug](https://github.com/warnix91/Volumetric-Ground-FX/issues)
 
 ## Build from source
 
